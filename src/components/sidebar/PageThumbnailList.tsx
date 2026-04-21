@@ -30,36 +30,41 @@ export function PageThumbnailList({ doc }: Props) {
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-
     const oldIndex = pageOrder.findIndex((p) => String(p) === active.id);
     const newIndex = pageOrder.findIndex((p) => String(p) === over.id);
     reorderPages(arrayMove(pageOrder, oldIndex, newIndex));
   };
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragEnd={handleDragEnd}
-    >
-      <SortableContext
-        items={pageOrder.map(String)}
-        strategy={verticalListSortingStrategy}
-      >
-        <div
-          style={{
-            width: 130,
-            minHeight: "100%",
-            background: "#f8fafc",
-            borderRight: "1px solid #e2e8f0",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            padding: "8px 0",
-            overflowY: "auto",
-            gap: 4,
-          }}
-        >
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={pageOrder.map(String)} strategy={verticalListSortingStrategy}>
+        <div style={{
+          width: "var(--sidebar-width)",
+          minWidth: "var(--sidebar-width)",
+          height: "100%",
+          background: "var(--bg-sidebar)",
+          backdropFilter: "blur(20px) saturate(180%)",
+          WebkitBackdropFilter: "blur(20px) saturate(180%)",
+          borderRight: "0.5px solid var(--border)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          padding: "12px 0 16px",
+          overflowY: "auto",
+          gap: 2,
+        }}>
+          <span style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: "var(--text-secondary)",
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
+            marginBottom: 8,
+            alignSelf: "flex-start",
+            paddingLeft: 12,
+          }}>
+            Pages
+          </span>
           {pageOrder.map((origIdx, displayIdx) => (
             <PageThumbnail
               key={origIdx}

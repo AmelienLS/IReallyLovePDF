@@ -10,9 +10,8 @@ export function Toolbar() {
   const setZoom = usePdfStore((s) => s.setZoom);
   const loadFile = usePdfStore((s) => s.loadFile);
   const isDirty = usePdfStore((s) => s.isDirty);
-  const { doSave } = useSaveDocument();
-  // pageCount not directly available here, derive from pageOrder
   const pageCount = usePdfStore((s) => s.pageOrder.length);
+  const { doSave } = useSaveDocument();
 
   const handleOpen = async () => {
     const selected = await open({
@@ -23,8 +22,6 @@ export function Toolbar() {
     const path = typeof selected === "string" ? selected : selected[0];
     const bytes: number[] = await invoke("open_pdf", { path });
     const uint8 = new Uint8Array(bytes);
-    // We need page count before loading into store — let PDF.js tell us via the loader
-    // Temporarily load to get page count
     const { pdfjs } = await import("../../lib/pdfjs");
     const doc = await pdfjs.getDocument({ data: uint8.slice() }).promise;
     const count = doc.numPages;
@@ -32,116 +29,138 @@ export function Toolbar() {
     loadFile(path, uint8, count);
   };
 
+  const tools = [
+    { id: "select"    as const, label: "Sélection",  icon: "↖" },
+    { id: "text"      as const, label: "Texte",       icon: "T" },
+    { id: "highlight" as const, label: "Surligner",   icon: "✦" },
+  ];
+
   return (
-    <div
-      style={{
-        height: 52,
-        background: "#1e293b",
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "0 16px",
-        flexShrink: 0,
-        borderBottom: "1px solid #0f172a",
-      }}
-    >
-      <span style={{ color: "#e2e8f0", fontWeight: 700, fontSize: 15, marginRight: 8 }}>
+    <div style={{
+      height: "var(--titlebar-height)",
+      background: "var(--bg-card)",
+      borderBottom: "0.5px solid var(--separator)",
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      padding: "0 16px",
+      flexShrink: 0,
+    }}>
+      <span style={{
+        fontSize: 13,
+        fontWeight: 600,
+        color: "var(--text-primary)",
+        marginRight: 8,
+        letterSpacing: "-0.01em",
+      }}>
         IReallyLovePDF
       </span>
 
-      <ToolbarBtn onClick={handleOpen} label="📂 Ouvrir" />
-      <ToolbarBtn
-        onClick={() => doSave(false)}
-        label={isDirty ? "💾 Sauvegarder*" : "💾 Sauvegarder"}
-        disabled={pageCount === 0}
-        highlight={isDirty}
-      />
-      <ToolbarBtn
-        onClick={() => doSave(true)}
-        label="💾 Sauvegarder sous..."
-        disabled={pageCount === 0}
-      />
+      <Sep />
 
-      <div style={{ width: 1, height: 28, background: "#334155", margin: "0 4px" }} />
-
-      {(["select", "text", "highlight"] as const).map((mode) => (
-        <ToolbarBtn
-          key={mode}
-          onClick={() => setToolMode(mode)}
-          label={
-            mode === "select" ? "↖ Sélection" : mode === "text" ? "T Texte" : "🖊 Surligner"
-          }
-          active={toolMode === mode}
+      {/* File actions */}
+      <div style={{ display: "flex", gap: 4 }}>
+        <button className="btn-secondary" onClick={handleOpen}>
+          Ouvrir
+        </button>
+        <button
+          className="btn-secondary"
+          onClick={() => doSave(false)}
           disabled={pageCount === 0}
-        />
-      ))}
-
-      <div style={{ width: 1, height: 28, background: "#334155", margin: "0 4px" }} />
-
-      <button
-        onClick={() => setZoom(zoom - 0.25)}
-        disabled={zoom <= 0.5}
-        style={btnStyle}
-      >
-        −
-      </button>
-      <span style={{ color: "#94a3b8", fontSize: 12, minWidth: 40, textAlign: "center" }}>
-        {Math.round(zoom * 100)}%
-      </span>
-      <button
-        onClick={() => setZoom(zoom + 0.25)}
-        disabled={zoom >= 3}
-        style={btnStyle}
-      >
-        +
-      </button>
+          style={isDirty ? { color: "var(--accent)" } : {}}
+        >
+          {isDirty ? "Sauvegarder •" : "Sauvegarder"}
+        </button>
+        <button
+          className="btn-secondary"
+          onClick={() => doSave(true)}
+          disabled={pageCount === 0}
+        >
+          Sauvegarder sous…
+        </button>
+      </div>
 
       {pageCount > 0 && (
-        <span style={{ color: "#64748b", fontSize: 11, marginLeft: "auto" }}>
+        <>
+          <Sep />
+
+          {/* Tool mode — tab-bar style */}
+          <div style={{
+            display: "flex",
+            background: "var(--bg-grouped)",
+            borderRadius: "var(--radius-md)",
+            padding: 3,
+            gap: 2,
+          }}>
+            {tools.map(({ id, label, icon }) => (
+              <button
+                key={id}
+                onClick={() => setToolMode(id)}
+                style={{
+                  background: toolMode === id ? "var(--accent)" : "transparent",
+                  color: toolMode === id ? "#fff" : "var(--text-secondary)",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "4px 12px",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  border: "none",
+                  boxShadow: toolMode === id ? "0 1px 3px rgba(0,0,0,0.12)" : "none",
+                  transition: "all 0.15s ease",
+                  gap: 5,
+                }}
+              >
+                <span style={{ fontSize: 11 }}>{icon}</span> {label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      <Sep />
+
+      {/* Zoom */}
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <button
+          className="btn-secondary"
+          style={{ padding: "4px 10px", fontSize: 15, lineHeight: 1 }}
+          onClick={() => setZoom(zoom - 0.25)}
+          disabled={zoom <= 0.5}
+        >
+          −
+        </button>
+        <span style={{ fontSize: 12, color: "var(--text-secondary)", minWidth: 36, textAlign: "center" }}>
+          {Math.round(zoom * 100)}%
+        </span>
+        <button
+          className="btn-secondary"
+          style={{ padding: "4px 10px", fontSize: 15, lineHeight: 1 }}
+          onClick={() => setZoom(zoom + 0.25)}
+          disabled={zoom >= 3}
+        >
+          +
+        </button>
+      </div>
+
+      {pageCount > 0 && (
+        <span style={{
+          marginLeft: "auto",
+          fontSize: 11,
+          color: "var(--text-tertiary)",
+        }}>
           {pageCount} page{pageCount > 1 ? "s" : ""}
-          {isDirty ? " · non sauvegardé" : ""}
         </span>
       )}
     </div>
   );
 }
 
-const btnStyle: React.CSSProperties = {
-  background: "#334155",
-  border: "none",
-  borderRadius: 4,
-  color: "#e2e8f0",
-  padding: "4px 10px",
-  cursor: "pointer",
-  fontSize: 13,
-};
-
-function ToolbarBtn({
-  onClick,
-  label,
-  active,
-  disabled,
-  highlight,
-}: {
-  onClick: () => void;
-  label: string;
-  active?: boolean;
-  disabled?: boolean;
-  highlight?: boolean;
-}) {
+function Sep() {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        ...btnStyle,
-        background: active ? "#2563eb" : highlight ? "#b45309" : "#334155",
-        opacity: disabled ? 0.4 : 1,
-        cursor: disabled ? "default" : "pointer",
-        fontWeight: active ? 600 : 400,
-      }}
-    >
-      {label}
-    </button>
+    <div style={{
+      width: 1, height: 20,
+      background: "var(--separator)",
+      margin: "0 2px",
+      flexShrink: 0,
+    }} />
   );
 }

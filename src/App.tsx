@@ -9,37 +9,37 @@ export default function App() {
   const { docRef, loading, error } = usePdfLoader(rawBytes);
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100vh",
-        fontFamily: "system-ui, sans-serif",
-        overflow: "hidden",
-      }}
-    >
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
       <Toolbar />
 
-      {loading && (
-        <div style={centerStyle}>Chargement du PDF...</div>
-      )}
+      {loading && <Center><Spinner /></Center>}
 
       {error && (
-        <div style={{ ...centerStyle, color: "#ef4444" }}>
-          Erreur : {error}
-        </div>
+        <Center>
+          <div style={{
+            background: "var(--red-bg)",
+            color: "var(--red)",
+            borderRadius: "var(--radius-md)",
+            padding: "12px 20px",
+            fontSize: 13,
+          }}>
+            Erreur : {error}
+          </div>
+        </Center>
       )}
 
       {!loading && !error && !rawBytes && (
-        <div style={centerStyle}>
-          <div style={{ textAlign: "center", color: "#64748b" }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>📄</div>
-            <div style={{ fontSize: 18, fontWeight: 600 }}>Ouvrez un PDF pour commencer</div>
-            <div style={{ fontSize: 13, marginTop: 8 }}>
-              Cliquez sur "📂 Ouvrir" dans la barre d'outils
+        <Center>
+          <div style={{ textAlign: "center", color: "var(--text-tertiary)" }}>
+            <div style={{ fontSize: 52, marginBottom: 12, opacity: 0.5 }}>📄</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
+              Ouvrez un PDF pour commencer
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+              Cliquez sur "Ouvrir" dans la barre d'outils
             </div>
           </div>
-        </div>
+        </Center>
       )}
 
       {!loading && !error && rawBytes && docRef.current && (
@@ -52,10 +52,32 @@ export default function App() {
   );
 }
 
-const centerStyle: React.CSSProperties = {
-  flex: 1,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: "#f8fafc",
-};
+function Center({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      flex: 1,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: "var(--bg-window)",
+    }}>
+      {children}
+    </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+      <div style={{
+        width: 20, height: 20,
+        border: "2px solid var(--border)",
+        borderTop: "2px solid var(--accent)",
+        borderRadius: "50%",
+        animation: "spin 0.8s linear infinite",
+      }} />
+      <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Chargement…</span>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}

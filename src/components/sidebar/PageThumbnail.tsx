@@ -27,9 +27,7 @@ export function PageThumbnail({ doc, origPageIndex, displayIndex }: Props) {
       page.render({ canvas, viewport }).promise.catch(() => {});
     });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [doc, origPageIndex]);
 
   return (
@@ -39,27 +37,35 @@ export function PageThumbnail({ doc, origPageIndex, displayIndex }: Props) {
       {...listeners}
       style={{
         transform: CSS.Transform.toString(transform),
-        transition,
+        transition: transition ?? "background 0.15s ease",
         opacity: isDragging ? 0.4 : 1,
         cursor: "grab",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        gap: 4,
-        padding: "6px 4px",
-        borderRadius: 6,
-        background: isDragging ? "#dbeafe" : "transparent",
+        gap: 5,
+        padding: "6px 8px",
+        borderRadius: "var(--radius-sm)",
+        background: isDragging ? "var(--accent-light)" : "transparent",
+        width: "calc(100% - 8px)",
       }}
     >
       <canvas
         ref={canvasRef}
         style={{
-          boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
-          borderRadius: 2,
-          maxWidth: 110,
+          boxShadow: "var(--shadow-card)",
+          borderRadius: 3,
+          maxWidth: 100,
+          display: "block",
         }}
       />
-      <span style={{ fontSize: 10, color: "#64748b" }}>{displayIndex + 1}</span>
+      <span style={{
+        fontSize: 11,
+        color: "var(--text-tertiary)",
+        fontVariantNumeric: "tabular-nums",
+      }}>
+        {displayIndex + 1}
+      </span>
     </div>
   );
 }

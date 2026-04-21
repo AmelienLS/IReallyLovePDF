@@ -25,36 +25,30 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
   useEffect(() => {
     let cancelled = false;
     doc.getPage(pdfPageNumber).then((p) => {
-      if (cancelled) {
-        p.cleanup();
-        return;
-      }
+      if (cancelled) { p.cleanup(); return; }
       prevPage.current?.cleanup();
       prevPage.current = p;
       setPage(p);
-      const vp = p.getViewport({ scale: 1 });
-      setPageHeightPt(vp.height);
+      setPageHeightPt(p.getViewport({ scale: 1 }).height);
     });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [doc, pdfPageNumber]);
 
   if (!page) {
     return (
-      <div
-        style={{
-          width: 600,
-          height: 800,
-          background: "#f1f5f9",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#94a3b8",
-          fontSize: 14,
-        }}
-      >
-        Chargement...
+      <div style={{
+        width: 595,
+        height: 842,
+        background: "var(--bg-card)",
+        borderRadius: "var(--radius-lg)",
+        boxShadow: "var(--shadow-card)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "var(--text-tertiary)",
+        fontSize: 13,
+      }}>
+        Chargement…
       </div>
     );
   }
@@ -63,61 +57,39 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
     activeEditId && edits[activeEditId]?.type === "text-replacement"
       ? (edits[activeEditId] as TextEdit)
       : null;
-
   const isActiveOnThisPage = activeEdit?.pageIndex === pageIndex;
 
   return (
-    <div
-      style={{
+    <div style={{ position: "relative" }}>
+      <div style={{
         position: "relative",
         width: canvasSize.w,
         height: canvasSize.h,
-        boxShadow: "0 4px 24px rgba(0,0,0,0.18)",
+        boxShadow: "0 2px 16px rgba(0,0,0,0.10), 0 0.5px 1px rgba(0,0,0,0.06)",
+        borderRadius: "var(--radius-sm)",
         background: "#fff",
+        overflow: "hidden",
         flexShrink: 0,
-      }}
-    >
-      <CanvasLayer
-        page={page}
-        scale={scale}
-        onSize={(w, h) => setCanvasSize({ w, h })}
-      />
-      {canvasSize.w > 0 && (
-        <>
-          <TextLayer
-            page={page}
-            pageIndex={pageIndex}
-            scale={scale}
-            width={canvasSize.w}
-            height={canvasSize.h}
-          />
-          <AnnotationLayer
-            pageIndex={pageIndex}
-            scale={scale}
-            pageHeightPt={pageHeightPt}
-            width={canvasSize.w}
-            height={canvasSize.h}
-          />
-          {isActiveOnThisPage && activeEdit && (
-            <EditOverlay
-              edit={activeEdit}
-              scale={scale}
-              pageHeightPt={pageHeightPt}
-            />
-          )}
-        </>
-      )}
-      <div
-        style={{
-          position: "absolute",
-          bottom: -20,
-          left: 0,
-          right: 0,
-          textAlign: "center",
-          fontSize: 11,
-          color: "#94a3b8",
-        }}
-      >
+      }}>
+        <CanvasLayer page={page} scale={scale} onSize={(w, h) => setCanvasSize({ w, h })} />
+        {canvasSize.w > 0 && (
+          <>
+            <TextLayer page={page} pageIndex={pageIndex} scale={scale} width={canvasSize.w} height={canvasSize.h} />
+            <AnnotationLayer pageIndex={pageIndex} scale={scale} pageHeightPt={pageHeightPt} width={canvasSize.w} height={canvasSize.h} />
+            {isActiveOnThisPage && activeEdit && (
+              <EditOverlay edit={activeEdit} scale={scale} pageHeightPt={pageHeightPt} />
+            )}
+          </>
+        )}
+      </div>
+      {/* Page number badge */}
+      <div style={{
+        textAlign: "center",
+        marginTop: 8,
+        fontSize: 11,
+        color: "var(--text-tertiary)",
+        fontVariantNumeric: "tabular-nums",
+      }}>
         {pageIndex + 1}
       </div>
     </div>
