@@ -17,12 +17,14 @@ export function AnnotationLayer({ pageIndex, scale, pageHeightPt, width, height 
   const addNewTextBox = usePdfStore((s) => s.addNewTextBox);
   const updateEdit = usePdfStore((s) => s.updateEdit);
   const removeEdit = usePdfStore((s) => s.removeEdit);
+  const setActiveEdit = usePdfStore((s) => s.setActiveEdit);
   const layerRef = useRef<HTMLDivElement>(null);
 
   const pageEdits = Object.values(edits).filter((e) => e.pageIndex === pageIndex);
 
   const handleLayerClick = (e: React.MouseEvent) => {
     if (toolMode !== "text") return;
+    if (e.target !== layerRef.current) return;
     const rect = layerRef.current!.getBoundingClientRect();
     const pdfX = (e.clientX - rect.left) / scale;
     const pdfY = pageHeightPt - (e.clientY - rect.top) / scale;
@@ -37,6 +39,29 @@ export function AnnotationLayer({ pageIndex, scale, pageHeightPt, width, height 
     });
   };
 
+  // Delete button shared style
+  const deleteBtnStyle: React.CSSProperties = {
+    position: "absolute",
+    top: -10,
+    right: -10,
+    width: 20,
+    height: 20,
+    borderRadius: "50%",
+    background: "var(--accent)",
+    color: "#fff",
+    border: "1.5px solid #fff",
+    fontSize: 11,
+    lineHeight: 1,
+    cursor: "pointer",
+    pointerEvents: "auto",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+    boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+    zIndex: 2,
+  };
+
   return (
     <div
       ref={layerRef}
@@ -46,7 +71,6 @@ export function AnnotationLayer({ pageIndex, scale, pageHeightPt, width, height 
         top: 0, left: 0,
         width, height,
         pointerEvents: toolMode === "text" ? "auto" : "none",
-        zIndex: 10,
       }}
     >
       {pageEdits.map((edit) => {
@@ -79,33 +103,52 @@ export function AnnotationLayer({ pageIndex, scale, pageHeightPt, width, height 
           const r = nb.rect;
           const isActive = activeEditId === nb.id;
           return (
-            <textarea
+            <div
               key={nb.id}
-              defaultValue={nb.text}
-              placeholder="Tapez ici…"
-              onChange={(e) => updateEdit(nb.id, { text: e.target.value } as Partial<NewTextBox>)}
-              onDoubleClick={(e) => e.stopPropagation()}
               style={{
                 position: "absolute",
                 left: r.x * scale,
                 top: (pageHeightPt - r.y - r.height) * scale,
-                width: r.width * scale,
-                minHeight: r.height * scale,
-                fontSize: nb.fontSize * scale,
-                fontFamily: "var(--font-sans)",
-                border: isActive ? "1.5px solid var(--accent)" : "1px dashed var(--border-input)",
-                borderRadius: "var(--radius-sm)",
-                background: "var(--bg-card)",
-                padding: "3px 6px",
-                resize: "both",
                 pointerEvents: "auto",
                 zIndex: 15,
-                outline: "none",
-                boxShadow: isActive ? "0 0 0 3px var(--accent-light)" : "none",
-                color: `rgb(${(nb.color[0]*255).toFixed()},${(nb.color[1]*255).toFixed()},${(nb.color[2]*255).toFixed()})`,
-                userSelect: "text",
               }}
-            />
+            >
+              <textarea
+                defaultValue={nb.text}
+                placeholder="Tapez ici…"
+                autoFocus={isActive && nb.text === ""}
+                onFocus={() => setActiveEdit(nb.id)}
+                onChange={(e) => updateEdit(nb.id, { text: e.target.value } as Partial<NewTextBox>)}
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+                style={{
+                  width: r.width * scale,
+                  minHeight: r.height * scale,
+                  fontSize: nb.fontSize * scale,
+                  fontFamily: "var(--font-sans)",
+                  border: isActive ? "1.5px solid var(--accent)" : "1px dashed var(--border-input)",
+                  borderRadius: "var(--radius-sm)",
+                  background: "var(--bg-card)",
+                  padding: "3px 6px",
+                  resize: "both",
+                  outline: "none",
+                  boxShadow: isActive ? "0 0 0 3px var(--accent-light)" : "none",
+                  color: `rgb(${(nb.color[0]*255).toFixed()},${(nb.color[1]*255).toFixed()},${(nb.color[2]*255).toFixed()})`,
+                  userSelect: "text",
+                  display: "block",
+                }}
+              />
+              {isActive && (
+                <button
+                  type="button"
+                  title="Supprimer cette zone"
+                  onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); removeEdit(nb.id); }}
+                  style={deleteBtnStyle}
+                >
+                  ×
+                </button>
+              )}
+            </div>
           );
         }
 
@@ -113,26 +156,38 @@ export function AnnotationLayer({ pageIndex, scale, pageHeightPt, width, height 
         if (edit.type === "text-replacement") {
           const te = edit as TextEdit;
           const r = te.originalRect;
+          const isActive = activeEditId === te.id;
           return (
             <div
               key={te.id}
-              title={`"${te.originalText}" → "${te.newText}" — double-clic pour annuler`}
-              onDoubleClick={() => removeEdit(te.id)}
+              title={`"${te.originalText}" → "${te.newText}" — cliquez × pour annuler`}
               style={{
                 position: "absolute",
                 left: r.x * scale,
                 top: (pageHeightPt - r.y - r.height) * scale,
                 width: r.width * scale,
                 height: r.height * scale,
-                background: "var(--accent-light)",
-                border: "1px solid var(--accent)",
+                background: isActive ? "transparent" : "var(--accent-light)",
+                border: isActive ? "none" : "1px solid var(--accent)",
                 borderRadius: 2,
-                opacity: 0.6,
+                opacity: isActive ? 1 : 0.5,
                 pointerEvents: "auto",
                 cursor: "pointer",
-                zIndex: 5,
+                zIndex: isActive ? 20 : 5,
               }}
-            />
+              onClick={(e) => { e.stopPropagation(); setActiveEdit(te.id); }}
+            >
+              {isActive && (
+                <button
+                  type="button"
+                  title="Annuler cette modification"
+                  onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); removeEdit(te.id); }}
+                  style={deleteBtnStyle}
+                >
+                  ×
+                </button>
+              )}
+            </div>
           );
         }
 

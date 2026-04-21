@@ -1,5 +1,20 @@
 # Journal des modifications
 
+## [0.3.4] - 2026-04-21
+> Commit : `fix(editor): reliable text click, visible delete buttons and keyboard Delete`
+
+### Corrigé
+- Clic sur texte existant : le handler utilise désormais la délégation d'événements (mouseover/click sur le conteneur) et l'ordre des layers a été inversé — `TextLayer` (z-index 12) est placé visuellement au-dessus de `AnnotationLayer`, qui perd son propre stacking context afin que les zones actives (new-text z:15, text-replacement actif z:20) passent correctement au-dessus
+- Survol visuel : les spans de texte surlignent en bleu translucide en mode Sélection pour indiquer qu'ils sont cliquables
+- Les spans ne sont plus reconstruits à chaque changement de `toolMode` (seulement le curseur et user-select sont mis à jour)
+
+### Ajouté
+- Bouton × visible pour supprimer une nouvelle zone de texte (au focus) ou annuler une modification de texte existant (au clic)
+- Cliquer sur un indicateur de remplacement de texte l'active (permet de le supprimer via le bouton ×)
+- Raccourci clavier `Delete` / `Backspace` : supprime l'édition active lorsque le focus n'est pas dans un textarea/input
+
+---
+
 ## [0.3.3] - 2026-04-21
 > Commit : `feat(window): add macOS overlay titlebar and DMG layout`
 

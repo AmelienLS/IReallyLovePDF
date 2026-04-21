@@ -74,8 +74,8 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
         <CanvasLayer page={page} scale={scale} onSize={(w, h) => setCanvasSize({ w, h })} />
         {canvasSize.w > 0 && (
           <>
-            <TextLayer page={page} pageIndex={pageIndex} scale={scale} width={canvasSize.w} height={canvasSize.h} />
             <AnnotationLayer pageIndex={pageIndex} scale={scale} pageHeightPt={pageHeightPt} width={canvasSize.w} height={canvasSize.h} />
+            <TextLayer page={page} pageIndex={pageIndex} scale={scale} width={canvasSize.w} height={canvasSize.h} />
             {isActiveOnThisPage && activeEdit && (
               <EditOverlay edit={activeEdit} scale={scale} pageHeightPt={pageHeightPt} />
             )}

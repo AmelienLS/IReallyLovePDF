@@ -12,71 +12,129 @@ interface Props {
   height: number;
 }
 
+interface ItemRecord {
+  el: HTMLSpanElement;
+  item: PdfjsTextItem;
+  fontSize: number;
+}
+
 export function TextLayer({ page, pageIndex, scale, width, height }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const recordsRef = useRef<ItemRecord[]>([]);
   const toolMode = usePdfStore((s) => s.toolMode);
   const beginTextEdit = usePdfStore((s) => s.beginTextEdit);
   const addHighlight = usePdfStore((s) => s.addHighlight);
 
+  // Build/rebuild spans when page or scale change (NOT on every toolMode change)
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     container.innerHTML = "";
+    recordsRef.current = [];
 
     const viewport = page.getViewport({ scale });
+    let cancelled = false;
 
     page.getTextContent().then((tc) => {
-      if (!containerRef.current) return;
+      if (cancelled || !containerRef.current) return;
 
       for (const item of tc.items as PdfjsTextItem[]) {
-        if (!item.str.trim()) continue;
-
-        const span = document.createElement("span");
-        span.textContent = item.str;
+        if (!item.str || !item.str.trim()) continue;
 
         const [a, b, , , e, f] = item.transform;
         const tx = viewport.transform;
         const canvasX = tx[0] * e + tx[2] * f + tx[4];
         const canvasY = tx[1] * e + tx[3] * f + tx[5];
         const fontSize = Math.sqrt(a * a + b * b) * scale;
+        const spanWidth = item.width * scale;
 
+        const span = document.createElement("span");
+        span.textContent = item.str;
+        span.className = "pdf-text-span";
         span.style.cssText = `
           position: absolute;
           left: ${canvasX}px;
           top: ${canvasY - fontSize}px;
+          width: ${spanWidth}px;
+          height: ${fontSize * 1.2}px;
           font-size: ${fontSize}px;
+          line-height: 1;
           font-family: sans-serif;
           white-space: pre;
           color: transparent;
-          cursor: ${toolMode === "select" ? "text" : toolMode === "highlight" ? "crosshair" : "default"};
-          user-select: ${toolMode === "highlight" ? "text" : "none"};
-          pointer-events: auto;
-          transform-origin: 0 100%;
+          transform-origin: 0 0;
         `;
 
-        span.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          if (toolMode !== "select") return;
-          const rect = textItemToPdfRect(item.transform, item.width);
-          beginTextEdit(
-            {
-              str: item.str,
-              transform: item.transform,
-              width: item.width,
-              height: item.height ?? fontSize / scale,
-              fontName: item.fontName ?? "",
-            },
-            pageIndex,
-            rect
-          );
-        });
-
         container.appendChild(span);
+        recordsRef.current.push({ el: span, item, fontSize });
       }
     });
-  }, [page, scale, toolMode]);
 
-  // Highlight on mouse up
+    return () => { cancelled = true; };
+  }, [page, scale]);
+
+  // Update cursor / user-select / hover effect based on toolMode (no rebuild)
+  useEffect(() => {
+    for (const { el } of recordsRef.current) {
+      el.style.cursor =
+        toolMode === "select" ? "text" :
+        toolMode === "highlight" ? "text" : "default";
+      el.style.userSelect = toolMode === "highlight" ? "text" : "none";
+      el.style.background = "transparent";
+    }
+  }, [toolMode]);
+
+  // Click handler via event delegation — uses event.target at call time (fresh toolMode)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const onClick = (ev: MouseEvent) => {
+      if (toolMode !== "select") return;
+      const target = ev.target as HTMLElement;
+      const rec = recordsRef.current.find((r) => r.el === target);
+      if (!rec) return;
+      ev.stopPropagation();
+      ev.preventDefault();
+      const rect = textItemToPdfRect(rec.item.transform, rec.item.width);
+      beginTextEdit(
+        {
+          str: rec.item.str,
+          transform: rec.item.transform,
+          width: rec.item.width,
+          height: rec.item.height ?? rec.fontSize / scale,
+          fontName: rec.item.fontName ?? "",
+        },
+        pageIndex,
+        rect
+      );
+    };
+
+    const onOver = (ev: MouseEvent) => {
+      if (toolMode !== "select") return;
+      const target = ev.target as HTMLElement;
+      if (recordsRef.current.some((r) => r.el === target)) {
+        target.style.background = "rgba(0,122,255,0.15)";
+      }
+    };
+    const onOut = (ev: MouseEvent) => {
+      const target = ev.target as HTMLElement;
+      if (recordsRef.current.some((r) => r.el === target)) {
+        target.style.background = "transparent";
+      }
+    };
+
+    container.addEventListener("click", onClick);
+    container.addEventListener("mouseover", onOver);
+    container.addEventListener("mouseout", onOut);
+    return () => {
+      container.removeEventListener("click", onClick);
+      container.removeEventListener("mouseover", onOver);
+      container.removeEventListener("mouseout", onOut);
+    };
+  }, [toolMode, pageIndex, scale, beginTextEdit]);
+
+  // Highlight via text selection
   useEffect(() => {
     if (toolMode !== "highlight") return;
     const container = containerRef.current;
@@ -86,7 +144,7 @@ export function TextLayer({ page, pageIndex, scale, width, height }: Props) {
 
     const onMouseUp = () => {
       const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0) return;
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
       const range = sel.getRangeAt(0);
       const domRects = Array.from(range.getClientRects());
       if (domRects.length === 0) return;
@@ -125,6 +183,7 @@ export function TextLayer({ page, pageIndex, scale, width, height }: Props) {
         height,
         overflow: "hidden",
         pointerEvents: toolMode === "select" || toolMode === "highlight" ? "auto" : "none",
+        zIndex: 12,
       }}
     />
   );
