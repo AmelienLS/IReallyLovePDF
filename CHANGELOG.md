@@ -1,5 +1,18 @@
 # Journal des modifications
 
+## [0.4.2] - 2026-04-21
+> Commit : `feat(ocr): prominent dashed outline per detected zone with tooltip`
+
+### Ajouté
+- **Rectangle pointillé visible** (`1.5px dashed`) autour de chaque zone détectée en mode Sélection, avec un léger `outline-offset` pour bien détacher la bordure du contenu — chaque zone est identifiable individuellement
+- Couleur distinctive : **orange** pour les zones OCR, **bleu accent** pour le texte natif PDF.js
+- Fond translucide (12% orange / 8% bleu) remplit la zone pour visualiser son étendue exacte
+- **Effet de survol** : bordure pleine 2px, fond intensifié, halo et élévation (`box-shadow`) — la zone survolée ressort clairement de ses voisines
+- **Tooltip** au survol affichant le texte détecté : `« 25.4 » (OCR) — clic pour éditer` — permet de vérifier la lecture OCR avant modification
+- Transitions CSS fluides (120 ms) pour le hover et `border-radius: 2px` sur les zones
+
+---
+
 ## [0.4.1] - 2026-04-21
 > Commit : `fix(ocr): bundle tesseract assets locally and add ASCII symbol-level recognition`
 

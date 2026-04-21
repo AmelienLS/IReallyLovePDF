@@ -50,6 +50,7 @@ export function TextLayer({ page, pageIndex, scale, width, height, onTextCount }
     ) => {
       const span = document.createElement("span");
       span.textContent = text;
+      span.title = isOcr ? `« ${text} » (OCR) — clic pour éditer` : `« ${text} » — clic pour éditer`;
       span.className = isOcr ? "pdf-text-span pdf-text-span--ocr" : "pdf-text-span";
       span.style.cssText = `
         position: absolute;
@@ -121,14 +122,20 @@ export function TextLayer({ page, pageIndex, scale, width, height, onTextCount }
         toolMode === "select" ? "pointer" :
         toolMode === "highlight" ? "text" : "default";
       el.style.userSelect = toolMode === "highlight" ? "text" : "none";
+      el.style.transition = "background 0.12s ease, outline-color 0.12s ease, box-shadow 0.12s ease";
+      el.style.borderRadius = "2px";
       if (toolMode === "select") {
-        el.style.background = isOcr ? "rgba(255,149,0,0.10)" : "rgba(0,122,255,0.06)";
+        el.style.background = isOcr ? "rgba(255,149,0,0.12)" : "rgba(0,122,255,0.08)";
         el.style.outline = isOcr
-          ? "0.5px dashed rgba(255,149,0,0.55)"
-          : "0.5px dashed rgba(0,122,255,0.35)";
+          ? "1.5px dashed #ff9500"
+          : "1.5px dashed var(--accent)";
+        el.style.outlineOffset = "1px";
+        el.style.boxShadow = "none";
       } else {
         el.style.background = "transparent";
         el.style.outline = "none";
+        el.style.outlineOffset = "0";
+        el.style.boxShadow = "none";
       }
     }
   }, [toolMode, ocrWords]);
@@ -164,19 +171,25 @@ export function TextLayer({ page, pageIndex, scale, width, height, onTextCount }
       const target = ev.target as HTMLElement;
       if (recordsRef.current.some((r) => r.el === target)) {
         const isOcr = target.classList.contains("pdf-text-span--ocr");
-        target.style.background = isOcr ? "rgba(255,149,0,0.30)" : "rgba(0,122,255,0.22)";
-        target.style.outline = isOcr ? "1px solid #ff9500" : "1px solid var(--accent)";
+        target.style.background = isOcr ? "rgba(255,149,0,0.38)" : "rgba(0,122,255,0.28)";
+        target.style.outline = isOcr ? "2px solid #ff9500" : "2px solid var(--accent)";
+        target.style.boxShadow = isOcr
+          ? "0 0 0 3px rgba(255,149,0,0.25), 0 2px 8px rgba(255,149,0,0.35)"
+          : "0 0 0 3px rgba(0,122,255,0.20), 0 2px 8px rgba(0,122,255,0.30)";
+        target.style.zIndex = "2";
       }
     };
     const onOut = (ev: MouseEvent) => {
       const target = ev.target as HTMLElement;
       if (recordsRef.current.some((r) => r.el === target)) {
         const isOcr = target.classList.contains("pdf-text-span--ocr");
+        target.style.zIndex = "";
+        target.style.boxShadow = "none";
         if (toolMode === "select") {
-          target.style.background = isOcr ? "rgba(255,149,0,0.10)" : "rgba(0,122,255,0.06)";
+          target.style.background = isOcr ? "rgba(255,149,0,0.12)" : "rgba(0,122,255,0.08)";
           target.style.outline = isOcr
-            ? "0.5px dashed rgba(255,149,0,0.55)"
-            : "0.5px dashed rgba(0,122,255,0.35)";
+            ? "1.5px dashed #ff9500"
+            : "1.5px dashed var(--accent)";
         } else {
           target.style.background = "transparent";
           target.style.outline = "none";
