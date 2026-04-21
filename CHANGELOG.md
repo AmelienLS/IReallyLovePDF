@@ -1,5 +1,27 @@
 # Journal des modifications
 
+## [0.4.1] - 2026-04-21
+> Commit : `fix(ocr): bundle tesseract assets locally and add ASCII symbol-level recognition`
+
+### Corrigé
+- **OCR fonctionnel dans Tauri** : les assets tesseract (`worker.min.js`, 18 fichiers `tesseract-core*`, `eng.traineddata`, `fra.traineddata`) sont désormais copiés/téléchargés dans `public/tesseract/` par `scripts/setup-tesseract.mjs` exécuté en `predev` / `prebuild`. Plus aucun appel au CDN au runtime — l'OCR marche hors ligne et sans problème de CORS/CSP dans la webview Tauri
+- Appel `worker.recognize()` adapté à tesseract.js v7 : passage explicite de `output: { blocks: true, text: true }` pour obtenir l'arbre `blocks → paragraphs → lines → words → symbols`
+
+### Ajouté
+- **Granularité « par symbole »** (nouveau défaut) : chaque caractère ASCII reconnu devient une zone éditable indépendante — idéal pour modifier chiffre par chiffre une valeur de cote dans un dessin technique
+- Granularités disponibles : `par symbole` / `par mot` / `par ligne` via un sélecteur sous chaque page
+- Whitelist de caractères par défaut : chiffres, lettres ASCII, ponctuation courante et symboles métriques (`° ± × µ ∅ Ø`) — améliore drastiquement la précision en évitant les caractères exotiques parasites
+- `PSM.AUTO` + `preserve_interword_spaces: "1"`
+- Affichage du **statut** Tesseract en direct (rendu / chargement / reconnaissance) en plus du pourcentage
+- Message d'erreur détaillé si l'OCR échoue, avec conseil de relancer le script de setup
+
+### Modifié
+- `scripts/setup-tesseract.mjs` : script Node natif (zéro dépendance) qui copie les fichiers tesseract depuis `node_modules` et télécharge les `.traineddata` (tessdata_fast) depuis GitHub si absents
+- `package.json` : `predev` et `prebuild` enchaînent désormais `copy-pdfjs-worker` puis `setup-tesseract`
+- `.gitignore` : `public/tesseract/` et `public/pdf.worker.min.mjs` sont ignorés (régénérés automatiquement)
+
+---
+
 ## [0.4.0] - 2026-04-21
 > Commit : `feat(ocr): add Tesseract.js OCR for vectorized / scanned PDFs`
 

@@ -13,6 +13,10 @@ dist
 dist-ssr
 *.local
 
+# Assets générés par les scripts pre-dev / pre-build (régénérés via npm run predev)
+public/pdf.worker.min.mjs
+public/tesseract/
+
 # Dev instructions
 CLAUDE.md
 DECHARGER.md

@@ -6,7 +6,7 @@ import { AnnotationLayer } from "./AnnotationLayer";
 import { EditOverlay } from "./EditOverlay";
 import { usePdfStore } from "../../store/usePdfStore";
 import type { TextEdit } from "../../store/types";
-import { runOcrOnPage } from "../../lib/ocr";
+import { runOcrOnPage, type OcrGranularity } from "../../lib/ocr";
 
 interface Props {
   doc: PDFDocumentProxy;
@@ -21,6 +21,8 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
   const [pageHeightPt, setPageHeightPt] = useState(0);
   const [textCount, setTextCount] = useState<number | null>(null);
   const [ocrProgress, setOcrProgress] = useState<number>(0);
+  const [ocrStatus, setOcrStatus] = useState<string>("");
+  const [granularity, setGranularity] = useState<OcrGranularity>("symbol");
   const toolMode = usePdfStore((s) => s.toolMode);
   const activeEditId = usePdfStore((s) => s.activeEditId);
   const edits = usePdfStore((s) => s.edits);
@@ -34,12 +36,24 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
     if (!page || ocrRunning) return;
     setOcrRunning(pageIndex, true);
     setOcrProgress(0);
+    setOcrStatus("Initialisation…");
     try {
-      const words = await runOcrOnPage(page, "fra+eng", (p) => setOcrProgress(p));
+      const words = await runOcrOnPage(page, {
+        lang: "eng",
+        granularity,
+        onProgress: setOcrProgress,
+        onStatus: setOcrStatus,
+      });
       setOcrWords(pageIndex, words);
+      setOcrStatus(`${words.length} zone${words.length > 1 ? "s" : ""} détectée${words.length > 1 ? "s" : ""}`);
     } catch (e) {
       console.error("OCR failed:", e);
-      alert("L'OCR a échoué : " + (e instanceof Error ? e.message : String(e)));
+      const msg = e instanceof Error ? e.message : String(e);
+      setOcrStatus(`Erreur : ${msg}`);
+      alert(
+        "L'OCR a échoué :\n\n" + msg +
+        "\n\nConseil : relancer `npm run setup-tesseract` pour vérifier que les fichiers tesseract sont bien dans public/tesseract/"
+      );
     } finally {
       setOcrRunning(pageIndex, false);
     }
@@ -130,28 +144,46 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
           </span>
         )}
         {toolMode === "select" && (
-          <div style={{ marginTop: 6, display: "flex", justifyContent: "center", gap: 8 }}>
-            <button
-              className="btn-secondary"
-              onClick={handleRunOcr}
-              disabled={ocrRunning}
-              style={{ fontSize: 11, padding: "3px 10px" }}
-              title="Détecte le texte par reconnaissance optique (utile pour PDF vectorisés / scannés)"
-            >
-              {ocrRunning
-                ? `OCR… ${Math.round(ocrProgress * 100)}%`
-                : ocrWords
-                  ? "Relancer l'OCR"
-                  : "Lancer l'OCR sur cette page"}
-            </button>
-            {ocrWords && !ocrRunning && (
+          <div style={{ marginTop: 6, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+            <div style={{ display: "flex", justifyContent: "center", gap: 8, alignItems: "center" }}>
+              <select
+                value={granularity}
+                onChange={(e) => setGranularity(e.target.value as OcrGranularity)}
+                disabled={ocrRunning}
+                style={{ fontSize: 11, padding: "2px 6px", borderRadius: "var(--radius-sm)" }}
+                title="Granularité : symbole (caractère par caractère, idéal cotes), mot ou ligne"
+              >
+                <option value="symbol">par symbole</option>
+                <option value="word">par mot</option>
+                <option value="line">par ligne</option>
+              </select>
               <button
                 className="btn-secondary"
-                onClick={() => setOcrWords(pageIndex, [])}
+                onClick={handleRunOcr}
+                disabled={ocrRunning}
                 style={{ fontSize: 11, padding: "3px 10px" }}
+                title="Détecte le texte par reconnaissance optique (utile pour PDF vectorisés / scannés)"
               >
-                Effacer l'OCR
+                {ocrRunning
+                  ? `${Math.round(ocrProgress * 100)}%`
+                  : ocrWords
+                    ? "Relancer l'OCR"
+                    : "Lancer l'OCR sur cette page"}
               </button>
+              {ocrWords && !ocrRunning && (
+                <button
+                  className="btn-secondary"
+                  onClick={() => { setOcrWords(pageIndex, []); setOcrStatus(""); }}
+                  style={{ fontSize: 11, padding: "3px 10px" }}
+                >
+                  Effacer l'OCR
+                </button>
+              )}
+            </div>
+            {(ocrRunning || ocrStatus) && (
+              <div style={{ fontSize: 10, color: "var(--text-tertiary)", fontStyle: "italic" }}>
+                {ocrStatus}
+              </div>
             )}
           </div>
         )}
