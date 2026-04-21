@@ -1,5 +1,13 @@
 # Journal des modifications
 
+## [0.3.0] - 2026-04-21
+> Commit : `chore(ci): add GitHub Actions build workflow for macOS and Windows`
+
+### Ajouté
+- `.github/workflows/build.yml` : workflow CI/CD qui build automatiquement un DMG (macOS) et un NSIS `.exe` (Windows) et les publie en GitHub Release dès qu'un commit sur `main` contient un tag de version (ex: `V1.0.0`)
+
+---
+
 ## [0.2.0] - 2026-04-21
 > Commit : `feat(ui): apply Apple HIG design system`
 

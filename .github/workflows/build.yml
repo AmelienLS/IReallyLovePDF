@@ -1,0 +1,163 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # Détecte si le message de commit contient un numéro de version (ex: V1.0.0)
+  check-version:
+    name: Check commit message
+    runs-on: ubuntu-latest
+    outputs:
+      is_release: ${{ steps.check.outputs.is_release }}
+      release_version: ${{ steps.check.outputs.release_version }}
+    steps:
+      - name: Parse commit message
+        id: check
+        run: |
+          MSG="${{ github.event.head_commit.message }}"
+          if [[ "$MSG" =~ V([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?) ]]; then
+            echo "is_release=true" >> $GITHUB_OUTPUT
+            echo "release_version=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
+            echo "Release detected: V${BASH_REMATCH[1]}"
+          else
+            echo "is_release=false" >> $GITHUB_OUTPUT
+            echo "No version tag in commit message, skipping release."
+          fi
+
+  build-macos:
+    name: macOS (DMG)
+    runs-on: macos-latest
+    needs: check-version
+    if: needs.check-version.outputs.is_release == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        run: npm run tauri build
+
+      - name: Ad-hoc sign the .app
+        run: |
+          APP="src-tauri/target/release/bundle/macos/IReallyLovePDF.app"
+          xattr -cr "$APP"
+          codesign --force --deep --sign - "$APP"
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Inject signed app into Tauri DMG
+        run: |
+          APP="src-tauri/target/release/bundle/macos/IReallyLovePDF.app"
+          TAURI_DMG="src-tauri/target/release/bundle/dmg/IReallyLovePDF_${{ steps.version.outputs.version }}_aarch64.dmg"
+          RW_DMG="src-tauri/target/release/bundle/dmg/IReallyLovePDF_rw.dmg"
+          MOUNT_POINT="/Volumes/IReallyLovePDF"
+
+          hdiutil convert "$TAURI_DMG" -format UDRW -o "$RW_DMG"
+          hdiutil attach "$RW_DMG" -mountpoint "$MOUNT_POINT" -nobrowse -quiet
+          rm -rf "$MOUNT_POINT/IReallyLovePDF.app"
+          cp -R "$APP" "$MOUNT_POINT/"
+          hdiutil detach "$MOUNT_POINT" -quiet
+
+          rm -f "$TAURI_DMG"
+          hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$TAURI_DMG"
+          rm -f "$RW_DMG"
+
+      - name: Upload DMG as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: IReallyLovePDF-${{ steps.version.outputs.version }}-macos
+          path: "src-tauri/target/release/bundle/dmg/*.dmg"
+          retention-days: 30
+
+      - name: Attach DMG to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: V${{ needs.check-version.outputs.release_version }}
+          name: V${{ needs.check-version.outputs.release_version }}
+          files: "src-tauri/target/release/bundle/dmg/*.dmg"
+          generate_release_notes: true
+
+  build-windows:
+    name: Windows (NSIS .exe)
+    runs-on: windows-latest
+    needs: check-version
+    if: needs.check-version.outputs.is_release == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Clean old bundle artifacts
+        shell: bash
+        run: rm -f src-tauri/target/release/bundle/nsis/*.exe || true
+
+      - name: Build Tauri app
+        run: npm run tauri build
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Upload EXE as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: IReallyLovePDF-${{ steps.version.outputs.version }}-windows
+          path: "src-tauri/target/release/bundle/nsis/*.exe"
+          retention-days: 30
+
+      - name: Attach EXE to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: V${{ needs.check-version.outputs.release_version }}
+          name: V${{ needs.check-version.outputs.release_version }}
+          files: "src-tauri/target/release/bundle/nsis/*.exe"
+          generate_release_notes: true
