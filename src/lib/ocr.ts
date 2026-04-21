@@ -150,7 +150,9 @@ export async function runOcrOnPage(
             text,
             rect,
             confidence: s.confidence,
-            fontSize: rect.height * 0.9,
+            // Le bbox Tesseract colle au glyphe (pas d'ascendants/descendants) ;
+            // on majore pour retrouver la vraie taille de police en points.
+            fontSize: rect.height * 1.35,
           });
         }
       }
@@ -165,7 +167,7 @@ export async function runOcrOnPage(
         text,
         rect,
         confidence: line.confidence,
-        fontSize: rect.height * 0.85,
+        fontSize: rect.height * 1.15,
       });
     }
   } else {
@@ -185,7 +187,7 @@ export async function runOcrOnPage(
         text,
         rect,
         confidence: w.confidence,
-        fontSize: rect.height * 0.85,
+        fontSize: rect.height * 1.15,
       });
     }
   }

@@ -1,5 +1,13 @@
 # Journal des modifications
 
+## [0.5.1] - 2026-04-21
+> Commit : `fix(ocr): correct font size by compensating for glyph-tight bbox`
+
+### Corrigé
+- La taille de la police affichée dans l'aperçu WYSIWYG et dans l'`EditOverlay` était trop petite pour les zones OCR : le bbox Tesseract colle au glyphe et n'inclut ni les ascendants ni les descendants. Correction par un facteur de compensation (`× 1.35` pour la granularité `symbol`, `× 1.15` pour `word` / `line`) — le texte tapé apparaît désormais à la même taille visuelle que l'original
+
+---
+
 ## [0.5.0] - 2026-04-21
 > Commit : `feat(editor): live WYSIWYG preview of text replacements with matching typography`
 
