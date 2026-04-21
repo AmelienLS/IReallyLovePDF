@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { CanvasLayer } from "./CanvasLayer";
 import { TextLayer } from "./TextLayer";
+import { OcrOverlay } from "./OcrOverlay";
 import { AnnotationLayer } from "./AnnotationLayer";
 import { EditOverlay } from "./EditOverlay";
 import { usePdfStore } from "../../store/usePdfStore";
@@ -113,6 +114,7 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
           <>
             <AnnotationLayer pageIndex={pageIndex} scale={scale} pageHeightPt={pageHeightPt} width={canvasSize.w} height={canvasSize.h} />
             <TextLayer page={page} pageIndex={pageIndex} scale={scale} width={canvasSize.w} height={canvasSize.h} onTextCount={setTextCount} />
+            <OcrOverlay pageIndex={pageIndex} scale={scale} pageHeightPt={pageHeightPt} width={canvasSize.w} height={canvasSize.h} />
             {isActiveOnThisPage && activeEdit && (
               <EditOverlay edit={activeEdit} scale={scale} pageHeightPt={pageHeightPt} />
             )}

@@ -3,6 +3,7 @@ import type { PDFPageProxy } from "pdfjs-dist";
 import type { TextItem as PdfjsTextItem } from "pdfjs-dist/types/src/display/api";
 import { usePdfStore } from "../../store/usePdfStore";
 import { textItemToPdfRect } from "../../lib/coordinateUtils";
+import type { ToolMode } from "../../store/types";
 
 interface Props {
   page: PDFPageProxy;
@@ -17,17 +18,54 @@ interface ItemRecord {
   el: HTMLSpanElement;
   item: PdfjsTextItem;
   fontSize: number;
+  isOcr: boolean;
+}
+
+function applyIdleStyle(el: HTMLElement, isOcr: boolean, mode: ToolMode) {
+  el.style.transition = "background 0.12s ease, outline-color 0.12s ease, box-shadow 0.12s ease";
+  el.style.borderRadius = "2px";
+  el.style.boxShadow = "none";
+  el.style.zIndex = "";
+  if (mode === "select") {
+    el.style.cursor = "pointer";
+    el.style.userSelect = "none";
+    el.style.background = isOcr ? "rgba(255,149,0,0.15)" : "rgba(0,122,255,0.10)";
+    el.style.outline = isOcr ? "1.5px dashed #ff9500" : "1.5px dashed #007aff";
+    el.style.outlineOffset = "1px";
+  } else if (mode === "highlight") {
+    el.style.cursor = "text";
+    el.style.userSelect = "text";
+    el.style.background = "transparent";
+    el.style.outline = "none";
+    el.style.outlineOffset = "0";
+  } else {
+    el.style.cursor = "default";
+    el.style.userSelect = "none";
+    el.style.background = "transparent";
+    el.style.outline = "none";
+    el.style.outlineOffset = "0";
+  }
+}
+
+function applyHoverStyle(el: HTMLElement, isOcr: boolean) {
+  el.style.background = isOcr ? "rgba(255,149,0,0.38)" : "rgba(0,122,255,0.28)";
+  el.style.outline = isOcr ? "2px solid #ff9500" : "2px solid #007aff";
+  el.style.boxShadow = isOcr
+    ? "0 0 0 3px rgba(255,149,0,0.25), 0 2px 8px rgba(255,149,0,0.35)"
+    : "0 0 0 3px rgba(0,122,255,0.20), 0 2px 8px rgba(0,122,255,0.30)";
+  el.style.zIndex = "2";
 }
 
 export function TextLayer({ page, pageIndex, scale, width, height, onTextCount }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const recordsRef = useRef<ItemRecord[]>([]);
   const toolMode = usePdfStore((s) => s.toolMode);
+  const toolModeRef = useRef(toolMode);
+  toolModeRef.current = toolMode;
   const beginTextEdit = usePdfStore((s) => s.beginTextEdit);
   const addHighlight = usePdfStore((s) => s.addHighlight);
-  const ocrWords = usePdfStore((s) => s.ocrWords[pageIndex]);
 
-  // Build/rebuild spans when page, scale, or OCR words change
+  // Build/rebuild spans when page or scale changes
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -35,7 +73,6 @@ export function TextLayer({ page, pageIndex, scale, width, height, onTextCount }
     recordsRef.current = [];
 
     const viewport = page.getViewport({ scale });
-    const pageHeightPt = page.getViewport({ scale: 1 }).height;
     let cancelled = false;
 
     const appendSpan = (
@@ -64,9 +101,12 @@ export function TextLayer({ page, pageIndex, scale, width, height, onTextCount }
         white-space: pre;
         color: transparent;
         transform-origin: 0 0;
+        box-sizing: border-box;
       `;
+      // Apply the current-mode styling immediately so the outline is visible as soon as the span is in the DOM.
+      applyIdleStyle(span, isOcr, toolModeRef.current);
       container.appendChild(span);
-      recordsRef.current.push({ el: span, item, fontSize });
+      recordsRef.current.push({ el: span, item, fontSize, isOcr });
     };
 
     page.getTextContent().then((tc) => {
@@ -85,68 +125,26 @@ export function TextLayer({ page, pageIndex, scale, width, height, onTextCount }
         appendSpan(canvasX, canvasY - fontSize, spanWidth, fontSize * 1.2, fontSize, item.str, item, false);
       }
 
-      // Append OCR-detected words (if any)
-      if (ocrWords && ocrWords.length) {
-        for (const w of ocrWords) {
-          const r = w.rect;
-          const left = r.x * scale;
-          const top = (pageHeightPt - r.y - r.height) * scale;
-          const spanW = r.width * scale;
-          const spanH = r.height * scale;
-          const fontSize = w.fontSize * scale;
-          // Synthetic TextItem for beginTextEdit
-          const syntheticItem = {
-            str: w.text,
-            transform: [w.fontSize, 0, 0, w.fontSize, r.x, r.y],
-            width: r.width,
-            height: r.height,
-            fontName: "ocr",
-            hasEOL: false,
-            dir: "ltr",
-          } as unknown as PdfjsTextItem;
-          appendSpan(left, top, spanW, spanH, fontSize, w.text, syntheticItem, true);
-        }
-      }
-
       onTextCount?.(recordsRef.current.length);
     });
 
     return () => { cancelled = true; };
-  }, [page, scale, ocrWords]);
+  }, [page, scale]);
 
-  // Update cursor / user-select / visual hint based on toolMode (no rebuild)
+  // Re-apply idle styling when toolMode changes (no rebuild)
   useEffect(() => {
-    for (const { el } of recordsRef.current) {
-      const isOcr = el.classList.contains("pdf-text-span--ocr");
-      el.style.cursor =
-        toolMode === "select" ? "pointer" :
-        toolMode === "highlight" ? "text" : "default";
-      el.style.userSelect = toolMode === "highlight" ? "text" : "none";
-      el.style.transition = "background 0.12s ease, outline-color 0.12s ease, box-shadow 0.12s ease";
-      el.style.borderRadius = "2px";
-      if (toolMode === "select") {
-        el.style.background = isOcr ? "rgba(255,149,0,0.12)" : "rgba(0,122,255,0.08)";
-        el.style.outline = isOcr
-          ? "1.5px dashed #ff9500"
-          : "1.5px dashed var(--accent)";
-        el.style.outlineOffset = "1px";
-        el.style.boxShadow = "none";
-      } else {
-        el.style.background = "transparent";
-        el.style.outline = "none";
-        el.style.outlineOffset = "0";
-        el.style.boxShadow = "none";
-      }
+    for (const { el, isOcr } of recordsRef.current) {
+      applyIdleStyle(el, isOcr, toolMode);
     }
-  }, [toolMode, ocrWords]);
+  }, [toolMode]);
 
-  // Click handler via event delegation — uses event.target at call time (fresh toolMode)
+  // Click / hover handlers via delegation — read latest toolMode at call time.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const onClick = (ev: MouseEvent) => {
-      if (toolMode !== "select") return;
+      if (toolModeRef.current !== "select") return;
       const target = ev.target as HTMLElement;
       const rec = recordsRef.current.find((r) => r.el === target);
       if (!rec) return;
@@ -167,34 +165,17 @@ export function TextLayer({ page, pageIndex, scale, width, height, onTextCount }
     };
 
     const onOver = (ev: MouseEvent) => {
-      if (toolMode !== "select") return;
+      if (toolModeRef.current !== "select") return;
       const target = ev.target as HTMLElement;
-      if (recordsRef.current.some((r) => r.el === target)) {
-        const isOcr = target.classList.contains("pdf-text-span--ocr");
-        target.style.background = isOcr ? "rgba(255,149,0,0.38)" : "rgba(0,122,255,0.28)";
-        target.style.outline = isOcr ? "2px solid #ff9500" : "2px solid var(--accent)";
-        target.style.boxShadow = isOcr
-          ? "0 0 0 3px rgba(255,149,0,0.25), 0 2px 8px rgba(255,149,0,0.35)"
-          : "0 0 0 3px rgba(0,122,255,0.20), 0 2px 8px rgba(0,122,255,0.30)";
-        target.style.zIndex = "2";
-      }
+      const rec = recordsRef.current.find((r) => r.el === target);
+      if (!rec) return;
+      applyHoverStyle(target, rec.isOcr);
     };
     const onOut = (ev: MouseEvent) => {
       const target = ev.target as HTMLElement;
-      if (recordsRef.current.some((r) => r.el === target)) {
-        const isOcr = target.classList.contains("pdf-text-span--ocr");
-        target.style.zIndex = "";
-        target.style.boxShadow = "none";
-        if (toolMode === "select") {
-          target.style.background = isOcr ? "rgba(255,149,0,0.12)" : "rgba(0,122,255,0.08)";
-          target.style.outline = isOcr
-            ? "1.5px dashed #ff9500"
-            : "1.5px dashed var(--accent)";
-        } else {
-          target.style.background = "transparent";
-          target.style.outline = "none";
-        }
-      }
+      const rec = recordsRef.current.find((r) => r.el === target);
+      if (!rec) return;
+      applyIdleStyle(target, rec.isOcr, toolModeRef.current);
     };
 
     container.addEventListener("click", onClick);
@@ -205,7 +186,7 @@ export function TextLayer({ page, pageIndex, scale, width, height, onTextCount }
       container.removeEventListener("mouseover", onOver);
       container.removeEventListener("mouseout", onOut);
     };
-  }, [toolMode, pageIndex, scale, beginTextEdit]);
+  }, [pageIndex, scale, beginTextEdit]);
 
   // Highlight via text selection
   useEffect(() => {

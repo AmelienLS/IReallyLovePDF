@@ -1,5 +1,33 @@
 # Journal des modifications
 
+## [0.4.4] - 2026-04-21
+> Commit : `refactor(ocr): extract OCR zones into dedicated declarative OcrOverlay component`
+
+### Modifié
+- **Architecture OCR refondue** : les zones OCR ne sont plus gérées par `TextLayer` (manipulation DOM impérative dans un `.then()` asynchrone, sujette aux race conditions) mais par un nouveau composant dédié `OcrOverlay.tsx` qui rend chaque zone en **JSX déclaratif**. Les rectangles pointillés apparaissent donc de façon garantie dès que `ocrWords` est présent dans le store — aucune dépendance à l'ordre d'exécution des effets
+- `TextLayer` simplifié : ne gère plus que le texte extrait par PDF.js (natif). Suppression du sélecteur `ocrWords` et de la branche OCR dans la boucle d'ajout de spans
+
+### Ajouté
+- `src/components/viewer/OcrOverlay.tsx` : overlay React (zIndex 14) qui affiche chaque zone détectée comme un `<div>` absolument positionné avec bordure pointillée orange, fond translucide, hover glow, et handler `onClick` → `beginTextEdit`
+- **Déduplication** : les zones OCR déjà transformées en `text-replacement` sont automatiquement masquées (comparaison sur `originalRect`) — évite les doublons quand on re-clique après édition
+
+---
+
+## [0.4.3] - 2026-04-21
+> Commit : `fix(ocr): apply dashed outline at span creation to avoid race with async build`
+
+### Corrigé
+- Les rectangles pointillés autour des zones OCR n'apparaissaient pas alors que le badge indiquait « N zones détectées » : les styles étaient posés par un `useEffect` qui s'exécutait **avant** que `page.getTextContent().then()` ait eu le temps d'ajouter les spans au DOM. Le `recordsRef` était encore vide au moment du styling
+- Correction : les styles « idle » (pointillé orange/bleu, fond translucide) sont maintenant appliqués **directement au moment de l'ajout du span** via `applyIdleStyle()`, en utilisant `toolModeRef` pour lire le mode courant. Un `useEffect` secondaire réapplique les styles uniquement lors d'un changement de `toolMode`
+- Taille minimale garantie pour les zones OCR (`6×10 px`) : les petits glyphes restent cliquables même à faible zoom
+- `box-sizing: border-box` ajouté aux spans pour que l'outline ne gonfle pas la boîte
+
+### Ajouté
+- `isOcr` mémorisé dans `ItemRecord` (évite de relire la classe CSS à chaque event)
+- Fond idle un peu plus marqué (15% orange / 10% bleu au lieu de 12% / 8%)
+
+---
+
 ## [0.4.2] - 2026-04-21
 > Commit : `feat(ocr): prominent dashed outline per detected zone with tooltip`
 
