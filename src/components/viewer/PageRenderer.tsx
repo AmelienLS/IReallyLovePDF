@@ -18,6 +18,8 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
   const [page, setPage] = useState<PDFPageProxy | null>(null);
   const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
   const [pageHeightPt, setPageHeightPt] = useState(0);
+  const [textCount, setTextCount] = useState<number | null>(null);
+  const toolMode = usePdfStore((s) => s.toolMode);
   const activeEditId = usePdfStore((s) => s.activeEditId);
   const edits = usePdfStore((s) => s.edits);
   const prevPage = useRef<PDFPageProxy | null>(null);
@@ -75,7 +77,7 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
         {canvasSize.w > 0 && (
           <>
             <AnnotationLayer pageIndex={pageIndex} scale={scale} pageHeightPt={pageHeightPt} width={canvasSize.w} height={canvasSize.h} />
-            <TextLayer page={page} pageIndex={pageIndex} scale={scale} width={canvasSize.w} height={canvasSize.h} />
+            <TextLayer page={page} pageIndex={pageIndex} scale={scale} width={canvasSize.w} height={canvasSize.h} onTextCount={setTextCount} />
             {isActiveOnThisPage && activeEdit && (
               <EditOverlay edit={activeEdit} scale={scale} pageHeightPt={pageHeightPt} />
             )}
@@ -91,6 +93,16 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
         fontVariantNumeric: "tabular-nums",
       }}>
         {pageIndex + 1}
+        {toolMode === "select" && textCount !== null && (
+          <span style={{
+            marginLeft: 8,
+            color: textCount === 0 ? "var(--danger, #d32f2f)" : "var(--text-tertiary)",
+          }}>
+            · {textCount === 0
+              ? "aucun texte extractible (PDF vectorisé / scanné)"
+              : `${textCount} zone${textCount > 1 ? "s" : ""} de texte éditable${textCount > 1 ? "s" : ""}`}
+          </span>
+        )}
       </div>
     </div>
   );

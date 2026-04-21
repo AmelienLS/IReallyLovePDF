@@ -1,5 +1,16 @@
 # Journal des modifications
 
+## [0.3.5] - 2026-04-21
+> Commit : `feat(editor): visible editable text regions and extraction status`
+
+### Ajouté
+- En mode Sélection, chaque zone de texte extraite par PDF.js (`getTextContent`) est maintenant affichée avec un fond bleuté et un pointillé discret — l'utilisateur voit immédiatement ce qui est cliquable/éditable (utile pour les cotes d'un dessin technique)
+- Hover : le fond s'intensifie et une bordure pleine accent apparaît pour confirmer la cible
+- Curseur `pointer` en mode Sélection
+- Badge sous chaque page indiquant le nombre de zones de texte éditables, ou un avertissement rouge `aucun texte extractible (PDF vectorisé / scanné)` lorsque PDF.js ne retourne aucun item — cas fréquent sur les PDF de CAO où le texte est converti en tracés vectoriels (OCR nécessaire, non supporté nativement)
+
+---
+
 ## [0.3.4] - 2026-04-21
 > Commit : `fix(editor): reliable text click, visible delete buttons and keyboard Delete`
 

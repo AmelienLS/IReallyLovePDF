@@ -10,6 +10,7 @@ interface Props {
   scale: number;
   width: number;
   height: number;
+  onTextCount?: (count: number) => void;
 }
 
 interface ItemRecord {
@@ -18,7 +19,7 @@ interface ItemRecord {
   fontSize: number;
 }
 
-export function TextLayer({ page, pageIndex, scale, width, height }: Props) {
+export function TextLayer({ page, pageIndex, scale, width, height, onTextCount }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const recordsRef = useRef<ItemRecord[]>([]);
   const toolMode = usePdfStore((s) => s.toolMode);
@@ -68,19 +69,27 @@ export function TextLayer({ page, pageIndex, scale, width, height }: Props) {
         container.appendChild(span);
         recordsRef.current.push({ el: span, item, fontSize });
       }
+      onTextCount?.(recordsRef.current.length);
     });
 
     return () => { cancelled = true; };
   }, [page, scale]);
 
-  // Update cursor / user-select / hover effect based on toolMode (no rebuild)
+  // Update cursor / user-select / visual hint based on toolMode (no rebuild)
   useEffect(() => {
     for (const { el } of recordsRef.current) {
       el.style.cursor =
-        toolMode === "select" ? "text" :
+        toolMode === "select" ? "pointer" :
         toolMode === "highlight" ? "text" : "default";
       el.style.userSelect = toolMode === "highlight" ? "text" : "none";
-      el.style.background = "transparent";
+      // Persistent outline in select mode so user sees what's editable
+      if (toolMode === "select") {
+        el.style.background = "rgba(0,122,255,0.06)";
+        el.style.outline = "0.5px dashed rgba(0,122,255,0.35)";
+      } else {
+        el.style.background = "transparent";
+        el.style.outline = "none";
+      }
     }
   }, [toolMode]);
 
@@ -114,13 +123,20 @@ export function TextLayer({ page, pageIndex, scale, width, height }: Props) {
       if (toolMode !== "select") return;
       const target = ev.target as HTMLElement;
       if (recordsRef.current.some((r) => r.el === target)) {
-        target.style.background = "rgba(0,122,255,0.15)";
+        target.style.background = "rgba(0,122,255,0.22)";
+        target.style.outline = "1px solid var(--accent)";
       }
     };
     const onOut = (ev: MouseEvent) => {
       const target = ev.target as HTMLElement;
       if (recordsRef.current.some((r) => r.el === target)) {
-        target.style.background = "transparent";
+        if (toolMode === "select") {
+          target.style.background = "rgba(0,122,255,0.06)";
+          target.style.outline = "0.5px dashed rgba(0,122,255,0.35)";
+        } else {
+          target.style.background = "transparent";
+          target.style.outline = "none";
+        }
       }
     };
 
