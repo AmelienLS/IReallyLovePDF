@@ -43,7 +43,7 @@ export function Toolbar() {
       display: "flex",
       alignItems: "center",
       gap: 6,
-      padding: "0 16px",
+      padding: "0 16px 0 80px",
       flexShrink: 0,
     }}>
       <span style={{

@@ -1,5 +1,23 @@
 # Journal des modifications
 
+## [0.3.3] - 2026-04-21
+> Commit : `feat(window): add macOS overlay titlebar and DMG layout`
+
+### Ajouté
+- `titleBarStyle: "Overlay"` + `hiddenTitle: true` : boutons traffic light natifs macOS superposés à la toolbar
+- Padding gauche 80px dans la toolbar pour ne pas masquer les boutons
+- Config DMG (position app/dossier, taille fenêtre) identique à UNL3DPriceFinder
+
+---
+
+## [0.3.2] - 2026-04-21
+> Commit : `fix(config): remove invalid plugins section from tauri.conf.json`
+
+### Corrigé
+- Crash au lancement : `plugins.dialog` avec valeur `{}` causait une erreur de désérialisation Tauri (`invalid type: map, expected unit`). Suppression de la section `plugins` entière — dans Tauri v2, dialog et fs se configurent uniquement via les capabilities.
+
+---
+
 ## [0.3.1] - 2026-04-21
 > Commit : `fix(ci): replace vite-plugin-static-copy with prebuild Node script for PDF.js worker`
 

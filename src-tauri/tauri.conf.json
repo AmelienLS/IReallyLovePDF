@@ -16,7 +16,11 @@
         "width": 1280,
         "height": 800,
         "minWidth": 900,
-        "minHeight": 600
+        "minHeight": 600,
+        "resizable": true,
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {
@@ -32,13 +36,12 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
-  },
-  "plugins": {
-    "dialog": {},
-    "fs": {
-      "scope": {
-        "allow": ["$HOME/**", "$DOCUMENT/**", "$DOWNLOAD/**", "$DESKTOP/**"]
+    ],
+    "macOS": {
+      "dmg": {
+        "appPosition": { "x": 180, "y": 170 },
+        "applicationFolderPosition": { "x": 480, "y": 170 },
+        "windowSize": { "width": 660, "height": 400 }
       }
     }
   }
