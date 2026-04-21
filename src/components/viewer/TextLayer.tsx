@@ -25,8 +25,9 @@ export function TextLayer({ page, pageIndex, scale, width, height, onTextCount }
   const toolMode = usePdfStore((s) => s.toolMode);
   const beginTextEdit = usePdfStore((s) => s.beginTextEdit);
   const addHighlight = usePdfStore((s) => s.addHighlight);
+  const ocrWords = usePdfStore((s) => s.ocrWords[pageIndex]);
 
-  // Build/rebuild spans when page or scale change (NOT on every toolMode change)
+  // Build/rebuild spans when page, scale, or OCR words change
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -34,7 +35,38 @@ export function TextLayer({ page, pageIndex, scale, width, height, onTextCount }
     recordsRef.current = [];
 
     const viewport = page.getViewport({ scale });
+    const pageHeightPt = page.getViewport({ scale: 1 }).height;
     let cancelled = false;
+
+    const appendSpan = (
+      left: number,
+      top: number,
+      w: number,
+      h: number,
+      fontSize: number,
+      text: string,
+      item: PdfjsTextItem,
+      isOcr: boolean
+    ) => {
+      const span = document.createElement("span");
+      span.textContent = text;
+      span.className = isOcr ? "pdf-text-span pdf-text-span--ocr" : "pdf-text-span";
+      span.style.cssText = `
+        position: absolute;
+        left: ${left}px;
+        top: ${top}px;
+        width: ${w}px;
+        height: ${h}px;
+        font-size: ${fontSize}px;
+        line-height: 1;
+        font-family: sans-serif;
+        white-space: pre;
+        color: transparent;
+        transform-origin: 0 0;
+      `;
+      container.appendChild(span);
+      recordsRef.current.push({ el: span, item, fontSize });
+    };
 
     page.getTextContent().then((tc) => {
       if (cancelled || !containerRef.current) return;
@@ -49,49 +81,57 @@ export function TextLayer({ page, pageIndex, scale, width, height, onTextCount }
         const fontSize = Math.sqrt(a * a + b * b) * scale;
         const spanWidth = item.width * scale;
 
-        const span = document.createElement("span");
-        span.textContent = item.str;
-        span.className = "pdf-text-span";
-        span.style.cssText = `
-          position: absolute;
-          left: ${canvasX}px;
-          top: ${canvasY - fontSize}px;
-          width: ${spanWidth}px;
-          height: ${fontSize * 1.2}px;
-          font-size: ${fontSize}px;
-          line-height: 1;
-          font-family: sans-serif;
-          white-space: pre;
-          color: transparent;
-          transform-origin: 0 0;
-        `;
-
-        container.appendChild(span);
-        recordsRef.current.push({ el: span, item, fontSize });
+        appendSpan(canvasX, canvasY - fontSize, spanWidth, fontSize * 1.2, fontSize, item.str, item, false);
       }
+
+      // Append OCR-detected words (if any)
+      if (ocrWords && ocrWords.length) {
+        for (const w of ocrWords) {
+          const r = w.rect;
+          const left = r.x * scale;
+          const top = (pageHeightPt - r.y - r.height) * scale;
+          const spanW = r.width * scale;
+          const spanH = r.height * scale;
+          const fontSize = w.fontSize * scale;
+          // Synthetic TextItem for beginTextEdit
+          const syntheticItem = {
+            str: w.text,
+            transform: [w.fontSize, 0, 0, w.fontSize, r.x, r.y],
+            width: r.width,
+            height: r.height,
+            fontName: "ocr",
+            hasEOL: false,
+            dir: "ltr",
+          } as unknown as PdfjsTextItem;
+          appendSpan(left, top, spanW, spanH, fontSize, w.text, syntheticItem, true);
+        }
+      }
+
       onTextCount?.(recordsRef.current.length);
     });
 
     return () => { cancelled = true; };
-  }, [page, scale]);
+  }, [page, scale, ocrWords]);
 
   // Update cursor / user-select / visual hint based on toolMode (no rebuild)
   useEffect(() => {
     for (const { el } of recordsRef.current) {
+      const isOcr = el.classList.contains("pdf-text-span--ocr");
       el.style.cursor =
         toolMode === "select" ? "pointer" :
         toolMode === "highlight" ? "text" : "default";
       el.style.userSelect = toolMode === "highlight" ? "text" : "none";
-      // Persistent outline in select mode so user sees what's editable
       if (toolMode === "select") {
-        el.style.background = "rgba(0,122,255,0.06)";
-        el.style.outline = "0.5px dashed rgba(0,122,255,0.35)";
+        el.style.background = isOcr ? "rgba(255,149,0,0.10)" : "rgba(0,122,255,0.06)";
+        el.style.outline = isOcr
+          ? "0.5px dashed rgba(255,149,0,0.55)"
+          : "0.5px dashed rgba(0,122,255,0.35)";
       } else {
         el.style.background = "transparent";
         el.style.outline = "none";
       }
     }
-  }, [toolMode]);
+  }, [toolMode, ocrWords]);
 
   // Click handler via event delegation — uses event.target at call time (fresh toolMode)
   useEffect(() => {
@@ -123,16 +163,20 @@ export function TextLayer({ page, pageIndex, scale, width, height, onTextCount }
       if (toolMode !== "select") return;
       const target = ev.target as HTMLElement;
       if (recordsRef.current.some((r) => r.el === target)) {
-        target.style.background = "rgba(0,122,255,0.22)";
-        target.style.outline = "1px solid var(--accent)";
+        const isOcr = target.classList.contains("pdf-text-span--ocr");
+        target.style.background = isOcr ? "rgba(255,149,0,0.30)" : "rgba(0,122,255,0.22)";
+        target.style.outline = isOcr ? "1px solid #ff9500" : "1px solid var(--accent)";
       }
     };
     const onOut = (ev: MouseEvent) => {
       const target = ev.target as HTMLElement;
       if (recordsRef.current.some((r) => r.el === target)) {
+        const isOcr = target.classList.contains("pdf-text-span--ocr");
         if (toolMode === "select") {
-          target.style.background = "rgba(0,122,255,0.06)";
-          target.style.outline = "0.5px dashed rgba(0,122,255,0.35)";
+          target.style.background = isOcr ? "rgba(255,149,0,0.10)" : "rgba(0,122,255,0.06)";
+          target.style.outline = isOcr
+            ? "0.5px dashed rgba(255,149,0,0.55)"
+            : "0.5px dashed rgba(0,122,255,0.35)";
         } else {
           target.style.background = "transparent";
           target.style.outline = "none";

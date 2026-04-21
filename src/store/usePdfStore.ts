@@ -10,6 +10,7 @@ import type {
   PdfRect,
   TextItem,
 } from "./types";
+import type { OcrWord } from "../lib/ocr";
 
 interface PdfState {
   filePath: string | null;
@@ -21,6 +22,8 @@ interface PdfState {
   zoom: number;
   isDirty: boolean;
   activeEditId: string | null;
+  ocrWords: Record<number, OcrWord[]>;
+  ocrRunning: Record<number, boolean>;
 }
 
 interface PdfActions {
@@ -38,6 +41,8 @@ interface PdfActions {
   addHighlight(data: Omit<Highlight, "id">): string;
   setActiveEdit(id: string | null): void;
   markClean(): void;
+  setOcrWords(pageIndex: number, words: OcrWord[]): void;
+  setOcrRunning(pageIndex: number, running: boolean): void;
 }
 
 export const usePdfStore = create<PdfState & PdfActions>()(
@@ -51,6 +56,8 @@ export const usePdfStore = create<PdfState & PdfActions>()(
     zoom: 1.5,
     isDirty: false,
     activeEditId: null,
+    ocrWords: {},
+    ocrRunning: {},
 
     loadFile(path, bytes, pageCount) {
       set((s) => {
@@ -61,6 +68,8 @@ export const usePdfStore = create<PdfState & PdfActions>()(
         s.isDirty = false;
         s.activeEditId = null;
         s.currentPage = 0;
+        s.ocrWords = {};
+        s.ocrRunning = {};
       });
     },
 
@@ -72,6 +81,8 @@ export const usePdfStore = create<PdfState & PdfActions>()(
         s.edits = {};
         s.isDirty = false;
         s.activeEditId = null;
+        s.ocrWords = {};
+        s.ocrRunning = {};
       });
     },
 
@@ -181,6 +192,18 @@ export const usePdfStore = create<PdfState & PdfActions>()(
     markClean() {
       set((s) => {
         s.isDirty = false;
+      });
+    },
+
+    setOcrWords(pageIndex, words) {
+      set((s) => {
+        s.ocrWords[pageIndex] = words;
+      });
+    },
+
+    setOcrRunning(pageIndex, running) {
+      set((s) => {
+        s.ocrRunning[pageIndex] = running;
       });
     },
   }))

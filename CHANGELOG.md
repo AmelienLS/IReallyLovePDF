@@ -1,5 +1,24 @@
 # Journal des modifications
 
+## [0.4.0] - 2026-04-21
+> Commit : `feat(ocr): add Tesseract.js OCR for vectorized / scanned PDFs`
+
+### Ajouté
+- **OCR sur demande via [`tesseract.js`](https://github.com/naptha/tesseract.js)** (langues `fra+eng`) : bouton « Lancer l'OCR sur cette page » sous chaque page en mode Sélection
+- `src/lib/ocr.ts` : rend la page à 3× pour précision OCR, filtre les mots avec confiance < 30%, retourne les bounding boxes en coordonnées PDF
+- Store : `ocrWords: Record<pageIndex, OcrWord[]>` + `ocrRunning`, réinitialisés à l'ouverture d'un nouveau PDF
+- `TextLayer` : fusionne les items PDF.js et les mots OCR, chaque mot OCR est cliquable (couleur orange distinctive vs bleu pour le texte natif)
+- Édition OCR : clic → `EditOverlay` → sauvegarde via `pdfSaver` qui dessine un rectangle blanc sur l'emplacement original et écrit le nouveau texte par-dessus (identique au flow de remplacement natif)
+- Indicateur de progression en temps réel pendant la reconnaissance
+- Bouton « Effacer l'OCR » pour repartir de zéro
+- Cas d'usage principal : **PDF de CAO / dessins techniques** où le texte a été converti en tracés vectoriels et n'est plus extractible par PDF.js
+
+### Modifié
+- `package.json` : ajout de la dépendance `tesseract.js`
+- Les données de langue Tesseract sont téléchargées depuis le CDN au premier OCR (CSP désactivée dans `tauri.conf.json`)
+
+---
+
 ## [0.3.5] - 2026-04-21
 > Commit : `feat(editor): visible editable text regions and extraction status`
 
