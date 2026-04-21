@@ -1,5 +1,15 @@
 # Journal des modifications
 
+## [0.3.1] - 2026-04-21
+> Commit : `fix(ci): replace vite-plugin-static-copy with prebuild Node script for PDF.js worker`
+
+### Corrigé
+- Erreur CI `frontendDist includes node_modules` : `vite-plugin-static-copy` préservait la structure `node_modules/` dans `dist/`, bloquant le build Tauri
+- Remplacement par un script `copy-pdfjs-worker` dans `package.json` (Node.js natif, cross-platform) qui copie `pdf.worker.min.mjs` dans `public/` avant chaque `build` et `dev`
+- Suppression de la dépendance `vite-plugin-static-copy`
+
+---
+
 ## [0.3.0] - 2026-04-21
 > Commit : `chore(ci): add GitHub Actions build workflow for macOS and Windows`
 

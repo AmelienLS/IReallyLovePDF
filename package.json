@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "copy-pdfjs-worker": "node -e \"require('fs').copyFileSync('node_modules/pdfjs-dist/build/pdf.worker.min.mjs','public/pdf.worker.min.mjs')\"",
+    "predev": "npm run copy-pdfjs-worker",
+    "prebuild": "npm run copy-pdfjs-worker",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -31,7 +34,6 @@
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4",
-    "vite-plugin-static-copy": "^4.1.0"
+    "vite": "^7.0.4"
   }
 }
