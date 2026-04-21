@@ -152,31 +152,46 @@ export function AnnotationLayer({ pageIndex, scale, pageHeightPt, width, height 
           );
         }
 
-        /* ── Remplacement de texte (indicateur visuel) ── */
+        /* ── Remplacement de texte (aperçu WYSIWYG live) ── */
         if (edit.type === "text-replacement") {
           const te = edit as TextEdit;
           const r = te.originalRect;
           const isActive = activeEditId === te.id;
+          const fontSize = Math.max(te.fontSize * scale, 8);
+          const color = `rgb(${(te.color[0]*255).toFixed()},${(te.color[1]*255).toFixed()},${(te.color[2]*255).toFixed()})`;
           return (
             <div
               key={te.id}
-              title={`"${te.originalText}" → "${te.newText}" — cliquez × pour annuler`}
+              title={`"${te.originalText}" → "${te.newText}" — clic pour éditer`}
               style={{
                 position: "absolute",
                 left: r.x * scale,
                 top: (pageHeightPt - r.y - r.height) * scale,
                 width: r.width * scale,
                 height: r.height * scale,
-                background: isActive ? "transparent" : "var(--accent-light)",
-                border: isActive ? "none" : "1px solid var(--accent)",
+                background: "#fff",
+                border: isActive ? "none" : "1px dashed var(--accent)",
                 borderRadius: 2,
-                opacity: isActive ? 1 : 0.5,
                 pointerEvents: "auto",
                 cursor: "pointer",
-                zIndex: isActive ? 20 : 5,
+                zIndex: isActive ? 19 : 5,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-start",
+                overflow: "hidden",
+                fontFamily: `"Helvetica Neue", Helvetica, Arial, sans-serif`,
+                fontWeight: 400,
+                letterSpacing: "0.01em",
+                fontSize,
+                lineHeight: 1,
+                color,
+                whiteSpace: "pre",
+                padding: 0,
+                boxSizing: "border-box",
               }}
               onClick={(e) => { e.stopPropagation(); setActiveEdit(te.id); }}
             >
+              {!isActive && te.newText}
               {isActive && (
                 <button
                   type="button"

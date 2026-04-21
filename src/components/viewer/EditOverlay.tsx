@@ -8,57 +8,68 @@ interface Props {
   pageHeightPt: number;
 }
 
+/**
+ * Éditeur de texte en place (input contrôlé). À chaque frappe, `updateEdit`
+ * patche le store → l'aperçu WYSIWYG dans AnnotationLayer se met à jour en
+ * direct (même police, même taille, fond blanc couvrant l'original).
+ */
 export function EditOverlay({ edit, scale, pageHeightPt }: Props) {
+  const updateEdit = usePdfStore((s) => s.updateEdit);
   const commitTextEdit = usePdfStore((s) => s.commitTextEdit);
   const removeEdit = usePdfStore((s) => s.removeEdit);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const r = edit.originalRect;
   const left = r.x * scale;
   const top = pageHeightPt * scale - (r.y + r.height) * scale;
-  const width = Math.max(r.width * scale, 80);
-  const fontSize = Math.max(r.height * scale * 0.88, 8);
+  const width = Math.max(r.width * scale, 32);
+  const height = r.height * scale;
+  const fontSize = Math.max(edit.fontSize * scale, 8);
+  const color = `rgb(${(edit.color[0] * 255).toFixed()},${(edit.color[1] * 255).toFixed()},${(edit.color[2] * 255).toFixed()})`;
 
   useEffect(() => {
-    textareaRef.current?.focus();
-    textareaRef.current?.select();
+    inputRef.current?.focus();
+    inputRef.current?.select();
   }, []);
 
-  const commit = () => {
-    const val = textareaRef.current?.value ?? "";
-    commitTextEdit(edit.id, val);
-  };
-
   const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") removeEdit(edit.id);
     e.stopPropagation();
+    if (e.key === "Escape") removeEdit(edit.id);
+    if (e.key === "Enter") commitTextEdit(edit.id, edit.newText);
   };
 
   return (
-    <textarea
-      ref={textareaRef}
-      defaultValue={edit.newText}
-      onBlur={commit}
+    <input
+      ref={inputRef}
+      type="text"
+      value={edit.newText}
+      onChange={(e) => updateEdit(edit.id, { newText: e.target.value })}
+      onBlur={() => commitTextEdit(edit.id, edit.newText)}
       onKeyDown={handleKey}
+      onClick={(e) => e.stopPropagation()}
       style={{
         position: "absolute",
         left,
         top,
         width,
-        minHeight: r.height * scale + 4,
+        height,
         fontSize,
-        fontFamily: "var(--font-sans)",
+        fontFamily: `"Helvetica Neue", Helvetica, Arial, sans-serif`,
+        fontWeight: 400,
+        letterSpacing: "0.01em",
         border: "1.5px solid var(--accent)",
-        background: "var(--bg-card)",
-        borderRadius: "var(--radius-sm)",
-        padding: "2px 4px",
-        resize: "both",
+        background: "#fff",
+        borderRadius: 2,
+        padding: 0,
+        margin: 0,
         zIndex: 20,
         outline: "none",
-        lineHeight: 1.3,
-        color: `rgb(${(edit.color[0] * 255).toFixed()},${(edit.color[1] * 255).toFixed()},${(edit.color[2] * 255).toFixed()})`,
+        lineHeight: 1,
+        color,
         boxShadow: "0 0 0 3px var(--accent-light)",
         userSelect: "text",
+        textAlign: "left",
+        boxSizing: "border-box",
       }}
     />
   );

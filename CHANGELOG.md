@@ -1,5 +1,18 @@
 # Journal des modifications
 
+## [0.5.0] - 2026-04-21
+> Commit : `feat(editor): live WYSIWYG preview of text replacements with matching typography`
+
+### Ajouté
+- **Aperçu WYSIWYG en direct** : dès qu'un caractère est modifié dans `EditOverlay`, le PDF affiche instantanément le résultat final — fond blanc couvrant le texte/OCR original, nouveau texte rendu à la **même taille** (`fontSize` hérité du transform PDF.js ou de la hauteur OCR) et **même couleur** que l'original
+- Typographie de substitution `"Helvetica Neue", Helvetica, Arial, sans-serif` avec `letterSpacing: 0.01em` et `lineHeight: 1` — reproduit visuellement le rendu Helvetica utilisé par `pdf-lib` à la sauvegarde, donc l'aperçu écran correspond exactement au PDF final
+
+### Modifié
+- `EditOverlay` : passage d'un `<textarea>` non-contrôlé (`defaultValue` + `onBlur`) à un `<input>` contrôlé (`value` + `onChange` → `updateEdit`). Chaque frappe patche le store → re-render live de l'aperçu. `Enter` valide, `Escape` annule, `blur` finalise
+- `AnnotationLayer` : le bloc `text-replacement` ne montre plus un simple indicateur coloré mais rend le `newText` avec la typographie cible dans un rectangle blanc (taille = `originalRect`) — à l'inactif, l'utilisateur voit le résultat comme imprimé ; à l'édition, l'input se superpose au même emplacement
+
+---
+
 ## [0.4.4] - 2026-04-21
 > Commit : `refactor(ocr): extract OCR zones into dedicated declarative OcrOverlay component`
 
