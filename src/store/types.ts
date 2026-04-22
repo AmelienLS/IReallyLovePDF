@@ -15,6 +15,7 @@ export interface TextEdit {
   fontSize: number;
   fontFamily: string;
   color: [number, number, number];
+  source?: "ocr" | "native";
 }
 
 export interface NewTextBox {

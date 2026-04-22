@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { CanvasLayer } from "./CanvasLayer";
 import { TextLayer } from "./TextLayer";
-import { OcrOverlay } from "./OcrOverlay";
 import { AnnotationLayer } from "./AnnotationLayer";
 import { EditOverlay } from "./EditOverlay";
 import { usePdfStore } from "../../store/usePdfStore";
@@ -23,15 +22,17 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
   const [textCount, setTextCount] = useState<number | null>(null);
   const [ocrProgress, setOcrProgress] = useState<number>(0);
   const [ocrStatus, setOcrStatus] = useState<string>("");
-  const [granularity, setGranularity] = useState<OcrGranularity>("symbol");
+  const [granularity, setGranularity] = useState<OcrGranularity>("line");
   const toolMode = usePdfStore((s) => s.toolMode);
   const activeEditId = usePdfStore((s) => s.activeEditId);
   const edits = usePdfStore((s) => s.edits);
   const ocrWords = usePdfStore((s) => s.ocrWords[pageIndex]);
   const ocrRunning = usePdfStore((s) => s.ocrRunning[pageIndex]);
-  const setOcrWords = usePdfStore((s) => s.setOcrWords);
+  const importOcrAsEdits = usePdfStore((s) => s.importOcrAsEdits);
   const setOcrRunning = usePdfStore((s) => s.setOcrRunning);
   const prevPage = useRef<PDFPageProxy | null>(null);
+
+  const ocrZoneCount = ocrWords?.length ?? 0;
 
   const handleRunOcr = async () => {
     if (!page || ocrRunning) return;
@@ -45,8 +46,8 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
         onProgress: setOcrProgress,
         onStatus: setOcrStatus,
       });
-      setOcrWords(pageIndex, words);
-      setOcrStatus(`${words.length} zone${words.length > 1 ? "s" : ""} détectée${words.length > 1 ? "s" : ""}`);
+      importOcrAsEdits(pageIndex, words);
+      setOcrStatus(`${words.length} zone${words.length > 1 ? "s" : ""} prête${words.length > 1 ? "s" : ""} à éditer`);
     } catch (e) {
       console.error("OCR failed:", e);
       const msg = e instanceof Error ? e.message : String(e);
@@ -114,7 +115,6 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
           <>
             <AnnotationLayer pageIndex={pageIndex} scale={scale} pageHeightPt={pageHeightPt} width={canvasSize.w} height={canvasSize.h} />
             <TextLayer page={page} pageIndex={pageIndex} scale={scale} width={canvasSize.w} height={canvasSize.h} onTextCount={setTextCount} />
-            <OcrOverlay pageIndex={pageIndex} scale={scale} pageHeightPt={pageHeightPt} width={canvasSize.w} height={canvasSize.h} />
             {isActiveOnThisPage && activeEdit && (
               <EditOverlay edit={activeEdit} scale={scale} pageHeightPt={pageHeightPt} />
             )}
@@ -138,9 +138,9 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
             · {textCount === 0
               ? "aucun texte extractible (PDF vectorisé / scanné)"
               : `${textCount} zone${textCount > 1 ? "s" : ""} éditable${textCount > 1 ? "s" : ""}`}
-            {ocrWords && ocrWords.length > 0 && (
+            {ocrZoneCount > 0 && (
               <span style={{ marginLeft: 6, color: "#ff9500" }}>
-                · OCR : {ocrWords.length} mot{ocrWords.length > 1 ? "s" : ""}
+                · OCR : {ocrZoneCount} zone{ocrZoneCount > 1 ? "s" : ""}
               </span>
             )}
           </span>
@@ -153,11 +153,11 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
                 onChange={(e) => setGranularity(e.target.value as OcrGranularity)}
                 disabled={ocrRunning}
                 style={{ fontSize: 11, padding: "2px 6px", borderRadius: "var(--radius-sm)" }}
-                title="Granularité : symbole (caractère par caractère, idéal cotes), mot ou ligne"
+                title="Granularité : ligne (zone par ligne de texte), mot ou symbole"
               >
-                <option value="symbol">par symbole</option>
-                <option value="word">par mot</option>
                 <option value="line">par ligne</option>
+                <option value="word">par mot</option>
+                <option value="symbol">par symbole</option>
               </select>
               <button
                 className="btn-secondary"
@@ -168,19 +168,10 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
               >
                 {ocrRunning
                   ? `${Math.round(ocrProgress * 100)}%`
-                  : ocrWords
+                  : ocrZoneCount > 0
                     ? "Relancer l'OCR"
                     : "Lancer l'OCR sur cette page"}
               </button>
-              {ocrWords && !ocrRunning && (
-                <button
-                  className="btn-secondary"
-                  onClick={() => { setOcrWords(pageIndex, []); setOcrStatus(""); }}
-                  style={{ fontSize: 11, padding: "3px 10px" }}
-                >
-                  Effacer l'OCR
-                </button>
-              )}
             </div>
             {(ocrRunning || ocrStatus) && (
               <div style={{ fontSize: 10, color: "var(--text-tertiary)", fontStyle: "italic" }}>

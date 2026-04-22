@@ -1,5 +1,20 @@
 # Journal des modifications
 
+## [0.6.0] - 2026-04-22
+> Commit : `feat(ocr): convert scanned zones to pre-filled text edits for iLovePDF-like UX`
+
+### Ajouté
+- `TextEdit.source?: "ocr" | "native"` : distingue les zones créées par OCR des éditions manuelles — les zones OCR sont toujours conservées à la sauvegarde même si leur texte n'a pas changé (garantit une typographie uniforme Helvetica sur tout le texte scanné)
+- `importOcrAsEdits(pageIndex, words)` dans le store : convertit directement chaque zone OCR en `TextEdit` pré-rempli avec le texte reconnu. Les anciennes zones OCR de la page sont purgées avant chaque re-scan
+
+### Modifié
+- **UX OCR** : après un scan, toutes les zones apparaissent immédiatement comme des boîtes blanches éditables avec le texte OCR dedans — l'utilisateur clique et tape directement, sans étape intermédiaire d'activation. Identique au comportement d'iLovePDF
+- Granularité par défaut : `"symbol"` → `"line"` (une zone par ligne de texte, plus naturel pour l'édition en place)
+- `commitTextEdit` : les zones OCR ne sont plus supprimées si le texte n'a pas changé (comportement préservé uniquement pour le texte natif PDF.js)
+- `PageRenderer` : `OcrOverlay` retiré — les zones OCR sont désormais rendues par `AnnotationLayer` via les `TextEdit` générés. Bouton "Effacer l'OCR" retiré (remplacé par "Relancer l'OCR" qui purge et recrée)
+
+---
+
 ## [0.5.1] - 2026-04-21
 > Commit : `fix(ocr): correct font size by compensating for glyph-tight bbox`
 

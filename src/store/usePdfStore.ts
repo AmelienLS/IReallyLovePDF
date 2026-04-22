@@ -43,6 +43,7 @@ interface PdfActions {
   markClean(): void;
   setOcrWords(pageIndex: number, words: OcrWord[]): void;
   setOcrRunning(pageIndex: number, running: boolean): void;
+  importOcrAsEdits(pageIndex: number, words: OcrWord[]): void;
 }
 
 export const usePdfStore = create<PdfState & PdfActions>()(
@@ -139,7 +140,9 @@ export const usePdfStore = create<PdfState & PdfActions>()(
         const edit = s.edits[id] as TextEdit;
         if (edit) {
           edit.newText = newText;
-          if (newText === edit.originalText) {
+          // OCR-sourced edits are always kept (even if unchanged) to ensure
+          // uniform typography across all scanned zones in the saved PDF.
+          if (newText === edit.originalText && edit.source !== "ocr") {
             delete s.edits[id];
           }
         }
@@ -204,6 +207,35 @@ export const usePdfStore = create<PdfState & PdfActions>()(
     setOcrRunning(pageIndex, running) {
       set((s) => {
         s.ocrRunning[pageIndex] = running;
+      });
+    },
+
+    importOcrAsEdits(pageIndex, words) {
+      set((s) => {
+        s.ocrWords[pageIndex] = words;
+        // Remove any previous OCR-sourced edits for this page before re-importing.
+        for (const id of Object.keys(s.edits)) {
+          const e = s.edits[id] as TextEdit;
+          if (e.type === "text-replacement" && e.source === "ocr" && e.pageIndex === pageIndex) {
+            delete s.edits[id];
+          }
+        }
+        for (const w of words) {
+          const id = nanoid();
+          s.edits[id] = {
+            id,
+            type: "text-replacement",
+            pageIndex,
+            originalRect: w.rect,
+            originalText: w.text,
+            newText: w.text,
+            fontSize: w.fontSize,
+            fontFamily: "Helvetica",
+            color: [0, 0, 0],
+            source: "ocr",
+          } as TextEdit;
+        }
+        s.isDirty = true;
       });
     },
   }))
