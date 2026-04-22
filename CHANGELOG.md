@@ -1,5 +1,30 @@
 # Journal des modifications
 
+## [0.7.6] - 2026-04-22
+> Commit : `fix(save): align PDF baseline with CSS cap-height; fix(ocr): tighter artifact filters`
+
+### Corrigé
+- **Décalage vertical entre la preview et le PDF sauvegardé** : la racine du problème était dans `drawTextReplacement` — la première ligne était positionnée avec `1.0 × fontSize` sous le haut de la bbox, alors que CSS `lineHeight:1.2` place la baseline à `0.82 × fontSize` (cap-height Helvetica 0.718 + demi-leading 0.1). Corrigé dans `pdfSaver.ts` : premier baseline à `0.82 × rowFontSize`, idem pour le chemin de secours sans `ocrRows`
+- **Artefacts watermark "J", "L" toujours présents** : seuil de binarisation abaissé de 100 à 80/255 — les pixels anti-aliasés en bordure du filigrane gris (80-100/255) sont maintenant éliminés avant Tesseract
+- **Fragments courts minuscules ("ed", "is", "of")** : `looksLikeText` rejette désormais les tokens de 1-2 caractères entièrement en minuscules
+- **Caractère unique trop grand ("J", "L" isolés)** : limite de hauteur ajoutée pour les tokens d'un seul caractère (`rect.height > pageH × 0.06`)
+- **Filtre de taille de police** : seuil outlier resserré à `2.0 × médiane` (au lieu de 2.5×) ; minimum absolu ajouté à `5pt` pour exclure le texte du cartouche trop petit pour être ré-dessiné fidèlement
+
+---
+
+## [0.7.5] - 2026-04-22
+> Commit : `fix(ocr): fixed threshold binarization, numeric confidence bypass, outlier filter`
+
+### Corrigé
+- **Filigrane gris rendu plus visible par la binarisation d'Otsu** : remplacé par un seuil fixe à 100/255 — seuls les pixels réellement foncés (encre) sont conservés, les gris moyens du filigrane diagonal deviennent blancs avant d'être envoyés à Tesseract
+- **Chiffres de listes (`1.`, `2.`, `3.`) toujours ignorés** : les tokens purement numériques contournent désormais le filtre de confiance et sont acceptés sans condition, quel que soit le score de Tesseract
+- **Artefacts de taille anormale (`433`, `J` isolés depuis un logo)** : filtre de valeurs aberrantes ajouté après extraction — tout mot dont la `fontSize` dépasse 2,5× la médiane de la page est écarté avant le clustering
+- **Symbole `∅` (diamètre) lu `@`** : post-processing étendu — `@(\d)` → `∅$1` corrige la notation diamètre sur les plans techniques
+- **`Y%` spurieux** : pattern `\bY(%)` → `$1` supprime le `Y` parasite avant les symboles `%`
+- **Clustering d'annotations empilées** : seuil vertical étendu de 1,5 → 2,5× la hauteur moyenne, ce qui permet de regrouper les cotes stacked type `(B) 0.433` + `[20.00]`
+
+---
+
 ## [0.7.4] - 2026-04-22
 > Commit : `fix(ocr): Otsu binarization to eliminate watermarks before recognition`
 

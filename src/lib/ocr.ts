@@ -49,25 +49,14 @@ function preprocessCanvas(src: HTMLCanvasElement): HTMLCanvasElement {
     gray[j] = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
   }
 
-  // Pass 2 — Otsu binarization.
-  // Finds the threshold that maximises between-class variance (foreground text
-  // vs background). This eliminates light-gray watermarks and stamps which
-  // become pure white, preventing Tesseract from reading them as text.
-  const hist = new Int32Array(256);
-  for (let j = 0; j < n; j++) hist[gray[j]]++;
-  let sum = 0;
-  for (let t = 0; t < 256; t++) sum += t * hist[t];
-  let sumB = 0, wB = 0, varMax = 0, threshold = 128;
-  for (let t = 0; t < 256; t++) {
-    wB += hist[t];
-    const wF = n - wB;
-    if (!wB || !wF) continue;
-    sumB += t * hist[t];
-    const mB = sumB / wB;
-    const mF = (sum - sumB) / wF;
-    const v = wB * wF * (mB - mF) * (mB - mF);
-    if (v > varMax) { varMax = v; threshold = t; }
-  }
+  // Pass 2 — fixed-threshold binarization.
+  // Threshold 80/255: only pixels darker than ~31% gray survive as foreground.
+  // Medium-gray watermarks (typically 120-170/255) become pure white before
+  // Tesseract sees the image, so they produce no OCR output. Anti-aliased edges
+  // of those marks (80-100/255) are also eliminated, preventing isolated-pixel
+  // fragments that Tesseract reads as letters like "J" or "L".
+  // Vector PDFs have crisp black ink (0-50/255), so real text is unaffected.
+  const threshold = 80;
 
   // Pass 3 — write binarized pixels back (0 = black text, 255 = white background).
   for (let i = 0, j = 0; i < d.length; i += 4, j++) {
@@ -93,7 +82,21 @@ function looksLikeText(text: string, rect: PdfRect, pageW: number, pageH: number
   if (rect.width  > pageW * 0.20) return false;
   if (rect.height > pageH * 0.15) return false;
 
-  // Short strings (≤3 chars): brackets, digits, punctuation — relax density check.
+  // Single character: only accept if the bbox is plausibly small.
+  // A lone "J" or "L" read from a diagonal watermark has a large bbox (the
+  // glyph spans a big chunk of the page). Real single chars in annotations like
+  // "(H)" are part of a 3-char group; bare single-char tokens are almost always
+  // watermark/logo artifacts.
+  if (trimmed.length === 1) {
+    if (rect.height > pageH * 0.06) return false;
+    return true;
+  }
+
+  // 1-2 lowercase-only characters: standalone "ed", "is", "of", etc. are
+  // almost always logo/watermark fragments, not real annotation content.
+  if (trimmed.length <= 2 && /^[a-z]+$/.test(trimmed)) return false;
+
+  // Short strings (2-3 chars): brackets, digits, punctuation — relax density check.
   if (trimmed.length <= 3) {
     if (!/\S/.test(trimmed)) return false;
     if (rect.width > rect.height * 10) return false;
@@ -117,6 +120,10 @@ function postProcess(text: string): string {
     // ± symbol: Tesseract often outputs "+/-", "+-", "+\-", "+/−"
     .replace(/\+\s*[/\\]?\s*[-−]/g, "±")
     .replace(/[-−]\s*[/\\]?\s*\+/g,  "±")
+    // ∅ symbol: Tesseract reads it as "@" before a digit (diameter notation)
+    .replace(/@(\d)/g, "∅$1")
+    // Spurious "Y" before "%": OCR artefact on some typefaces
+    .replace(/\bY(%)/g, "$1")
     // Degree symbol: sometimes output as "o" or "°" already — normalize
     .replace(/(\d)\s*o\b/g, "$1°")
     // Remove stray newlines within a word
@@ -147,7 +154,7 @@ function clusterWords(words: OcrWord[]): OcrWord[] {
   const avgH     = words.reduce((s, w) => s + w.rect.height, 0) / n;
   const avgCharW = words.reduce((s, w) => s + w.rect.width / Math.max(w.text.length, 1), 0) / n;
   const hThresh  = avgCharW * 3;   // max horizontal gap to be "on the same line"
-  const vThresh  = avgH * 1.5;     // max vertical gap for stacked annotations (tolerances etc.)
+  const vThresh  = avgH * 2.5;     // max vertical gap for stacked annotations (dimension clusters)
 
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
@@ -304,6 +311,11 @@ export async function runOcrOnPage(
 
   const pageW = page.getViewport({ scale: 1 }).width;
 
+  // Purely numeric tokens (e.g. list numbers "1.", "2.", digits in dimensions)
+  // often get low Tesseract confidence — accept them unconditionally so they
+  // are not silently dropped from lists and annotation blocks.
+  const isNumericOnly = (s: string) => /^\d+\.?$/.test(s);
+
   if (allLines.length) {
     for (const line of allLines) {
       const lineRect = toPdfRect(line.bbox);
@@ -311,7 +323,7 @@ export async function runOcrOnPage(
       for (const w of line.words ?? []) {
         const raw = w.text?.trim();
         if (!raw) continue;
-        if (w.confidence < CONF_WORD) continue;
+        if (!isNumericOnly(raw) && w.confidence < CONF_WORD) continue;
         const rect = toPdfRect(w.bbox);
         if (!looksLikeText(raw, rect, pageW, pageHeightPt)) continue;
         const text = postProcess(raw);
@@ -322,13 +334,25 @@ export async function runOcrOnPage(
     for (const w of (d.words ?? []) as TessWord[]) {
       const raw = w.text?.trim();
       if (!raw) continue;
-      if (w.confidence < CONF_WORD) continue;
+      if (!isNumericOnly(raw) && w.confidence < CONF_WORD) continue;
       const rect = toPdfRect(w.bbox);
       if (!looksLikeText(raw, rect, pageW, pageHeightPt)) continue;
       const text = postProcess(raw);
       const fontSize = rect.height * 1.15;
       wordResults.push({ text, rect, confidence: w.confidence, fontSize, rows: [[{ text, fontSize }]] });
     }
+  }
+
+  // Font-size outlier filter: remove words that are either too large (watermark
+  // fragments) or too small (illegibly tiny text that would be mangled when
+  // re-drawn). Using 2.0× median keeps large-but-legitimate titles while
+  // rejecting the outsized artifacts ("433", bold logo fragments).
+  if (wordResults.length > 1) {
+    const medFs = median(wordResults.map((w) => w.fontSize));
+    wordResults.splice(
+      0, wordResults.length,
+      ...wordResults.filter((w) => w.fontSize >= 5 && w.fontSize <= medFs * 2.0),
+    );
   }
 
   return clusterWords(wordResults);
