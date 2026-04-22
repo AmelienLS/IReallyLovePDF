@@ -159,16 +159,20 @@ export function AnnotationLayer({ pageIndex, scale, pageHeightPt, width, height 
           const isActive = activeEditId === te.id;
           const color = `rgb(${(te.color[0]*255).toFixed()},${(te.color[1]*255).toFixed()},${(te.color[2]*255).toFixed()})`;
           const rows: OcrRow[] | undefined = te.ocrRows;
+          // Display box is padded relative to the tight Tesseract bbox so that
+          // the rendered text (fontSize > bbox height) is never clipped.
+          // originalRect is unchanged and is what gets used for the PDF save.
+          const pad = Math.max(te.fontSize * scale * 0.15, 2);
           return (
             <div
               key={te.id}
               title={`"${te.originalText}" → "${te.newText}" — clic pour éditer`}
               style={{
                 position: "absolute",
-                left: r.x * scale,
-                top: (pageHeightPt - r.y - r.height) * scale,
-                width: r.width * scale,
-                height: r.height * scale,
+                left: r.x * scale - pad,
+                top: (pageHeightPt - r.y - r.height) * scale - pad,
+                width: r.width * scale + pad * 2,
+                height: r.height * scale + pad * 2,
                 background: "#fff",
                 border: isActive ? "none" : "1px dashed var(--accent)",
                 borderRadius: 2,

@@ -1,5 +1,41 @@
 # Journal des modifications
 
+## [0.7.4] - 2026-04-22
+> Commit : `fix(ocr): Otsu binarization to eliminate watermarks before recognition`
+
+### Corrigé
+- **Filigrane détecté comme texte / chiffres de listes qui disparaissent** : cause racine identifiée — le texte diagonal gris ("MW Industries") perturbait la segmentation de blocs de `PSM.AUTO`, mélangeant le contenu des notes avec celui du filigrane. Fix : binarisation d'Otsu ajoutée dans `preprocessCanvas` — l'algorithme calcule automatiquement le seuil optimal pour séparer le texte foncé du fond clair. Le filigrane gris devient pur blanc avant d'être envoyé à Tesseract, qui ne le voit plus du tout
+- Seuil de confiance abaissé 35 % → 25 % : les chiffres isolés (`1`, `2`, `3` en début de liste) et les tokens courts ont souvent une confiance basse mais sont légitimes
+
+---
+
+## [0.7.3] - 2026-04-22
+> Commit : `fix(ocr): filter watermarks by page-relative bbox size and post-process ± symbol`
+
+### Corrigé
+- **Watermark "MW Industries" détecté comme texte** : filtre `looksLikeText` étendu avec les dimensions de page — tout mot dont le bbox dépasse 20 % de la largeur ou 15 % de la hauteur de la page est considéré comme un filigrane/logo et écarté. Le texte diagonal de fond (type tampon MW Industries) ne génère plus de zones parasites
+- **Symbole `±` tronqué** : post-processing `postProcess()` appliqué à chaque mot avant insertion — `+/-`, `+-`, `+\-` sont convertis en `±`. Corrige les cotes de tolérance (`±0.039`, `±1.00`) qui apparaissaient sans le signe
+
+---
+
+## [0.7.2] - 2026-04-22
+> Commit : `fix(ocr): restore PSM.AUTO for lists and derive font size from line bbox`
+
+### Corrigé
+- **Chiffres de listes zappés** (`1.`, `2.`, `3.`) : `PSM.SPARSE_TEXT` ignorait les tokens courts dans les listes structurées. Retour à `PSM.AUTO` (plus robuste pour les documents mixtes) — le filtre `looksLikeText` continue de rejeter les logos et zones décoratives
+- **Taille de police incohérente sur une même ligne** : la `fontSize` est désormais dérivée du bbox de la **ligne Tesseract** (`lineRect.height × 0.88`) et appliquée uniformément à tous les mots de cette ligne. Ainsi majuscules et minuscules sur la même ligne ont la même taille affichée, conformément à la police originale du PDF
+
+---
+
+## [0.7.1] - 2026-04-22
+> Commit : `fix(ocr): expand display boxes and improve short-string detection`
+
+### Corrigé
+- **Boîtes trop petites** : le div d'affichage et l'input d'édition sont désormais élargis d'un padding `max(fontSize × 0.15, 2px)` sur chaque côté — le texte rendu (légèrement plus grand que le bbox Tesseract) n'est plus coupé. `originalRect` reste inchangé pour la sauvegarde PDF
+- **Chiffres et crochets manquants** : seuil de confiance abaissé de 50 % → 35 % ; filtre `looksLikeText` assoupli pour les chaînes courtes (≤ 3 caractères) où la contrainte alphanumérique et le ratio densité étaient trop stricts pour les symboles `[`, `]`, `(`, `)` et les chiffres isolés
+
+---
+
 ## [0.7.0] - 2026-04-22
 > Commit : `feat(ocr): auto-scan on load, per-word font sizes, multi-line clusters`
 

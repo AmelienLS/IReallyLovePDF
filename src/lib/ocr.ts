@@ -13,7 +13,7 @@ export interface OcrWord {
 const OCR_SCALE = 3;
 const TESS_BASE = "/tesseract";
 
-const CONF_WORD = 50;
+const CONF_WORD = 25;
 
 interface TessBBox { x0: number; y0: number; x1: number; y1: number }
 interface TessWord { text: string; bbox: TessBBox; confidence: number; symbols?: unknown[] }
@@ -41,19 +41,37 @@ function preprocessCanvas(src: HTMLCanvasElement): HTMLCanvasElement {
 
   const img = ctx.getImageData(0, 0, dst.width, dst.height);
   const d = img.data;
-  const gray = new Uint8ClampedArray(d.length >> 2);
-  let lo = 255, hi = 0;
+  const n = d.length >> 2;
+  const gray = new Uint8ClampedArray(n);
 
+  // Pass 1 — convert to grayscale.
   for (let i = 0, j = 0; i < d.length; i += 4, j++) {
-    const v = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
-    gray[j] = v;
-    if (v < lo) lo = v;
-    if (v > hi) hi = v;
+    gray[j] = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
   }
 
-  const range = hi - lo || 1;
+  // Pass 2 — Otsu binarization.
+  // Finds the threshold that maximises between-class variance (foreground text
+  // vs background). This eliminates light-gray watermarks and stamps which
+  // become pure white, preventing Tesseract from reading them as text.
+  const hist = new Int32Array(256);
+  for (let j = 0; j < n; j++) hist[gray[j]]++;
+  let sum = 0;
+  for (let t = 0; t < 256; t++) sum += t * hist[t];
+  let sumB = 0, wB = 0, varMax = 0, threshold = 128;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    const wF = n - wB;
+    if (!wB || !wF) continue;
+    sumB += t * hist[t];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+    const v = wB * wF * (mB - mF) * (mB - mF);
+    if (v > varMax) { varMax = v; threshold = t; }
+  }
+
+  // Pass 3 — write binarized pixels back (0 = black text, 255 = white background).
   for (let i = 0, j = 0; i < d.length; i += 4, j++) {
-    const v = Math.round(((gray[j] - lo) / range) * 255);
+    const v = gray[j] <= threshold ? 0 : 255;
     d[i] = d[i + 1] = d[i + 2] = v;
     d[i + 3] = 255;
   }
@@ -63,18 +81,46 @@ function preprocessCanvas(src: HTMLCanvasElement): HTMLCanvasElement {
 }
 
 // ---------------------------------------------------------------------------
-// Logo / non-text filter.
+// Logo / watermark / non-text filter.
+// pageW/pageH are in PDF points (scale=1).
 // ---------------------------------------------------------------------------
-function looksLikeText(text: string, rect: PdfRect): boolean {
+function looksLikeText(text: string, rect: PdfRect, pageW: number, pageH: number): boolean {
   const trimmed = text.replace(/\s/g, "");
-  if (!trimmed || !/[A-Za-z0-9]/.test(trimmed)) return false;
-  // Character density: real text fills its bbox; logos spread few chars over a large area.
+  if (!trimmed) return false;
+
+  // Watermark detection: diagonal stamp text has a bbox that spans a large
+  // fraction of the page. Real words never exceed ~20% of page width at once.
+  if (rect.width  > pageW * 0.20) return false;
+  if (rect.height > pageH * 0.15) return false;
+
+  // Short strings (≤3 chars): brackets, digits, punctuation — relax density check.
+  if (trimmed.length <= 3) {
+    if (!/\S/.test(trimmed)) return false;
+    if (rect.width > rect.height * 10) return false;
+    return true;
+  }
+
+  if (!/[A-Za-z0-9]/.test(trimmed)) return false;
+  // Character density: logos spread few chars over a large area.
   const area = rect.width * rect.height;
   const expectedArea = rect.height * rect.height * 0.6 * trimmed.length;
-  if (area > expectedArea * 4) return false;
-  // Extreme horizontal band = decorative element, not text.
+  if (area > expectedArea * 5) return false;
   if (rect.width > rect.height * 8) return false;
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Post-process common Tesseract errors on technical drawings.
+// ---------------------------------------------------------------------------
+function postProcess(text: string): string {
+  return text
+    // ± symbol: Tesseract often outputs "+/-", "+-", "+\-", "+/−"
+    .replace(/\+\s*[/\\]?\s*[-−]/g, "±")
+    .replace(/[-−]\s*[/\\]?\s*\+/g,  "±")
+    // Degree symbol: sometimes output as "o" or "°" already — normalize
+    .replace(/(\d)\s*o\b/g, "$1°")
+    // Remove stray newlines within a word
+    .replace(/(\w)\n(\w)/g, "$1$2");
 }
 
 function median(values: number[]): number {
@@ -217,7 +263,9 @@ export async function runOcrOnPage(
   });
 
   await worker.setParameters({
-    tessedit_pageseg_mode: PSM.SPARSE_TEXT,
+    // AUTO handles both structured documents (lists, paragraphs) and scattered
+    // technical text. Logo noise is handled by our looksLikeText filter.
+    tessedit_pageseg_mode: PSM.AUTO,
     preserve_interword_spaces: "1",
     ...(charWhitelist ? { tessedit_char_whitelist: charWhitelist } : {}),
   });
@@ -249,20 +297,38 @@ export async function runOcrOnPage(
     allLines.push(...d.lines);
   }
 
-  // Extract word-level results, filter noise.
-  const allWords: TessWord[] = allLines.length
-    ? allLines.flatMap((l) => l.words ?? [])
-    : (d.words ?? []);
-
+  // Extract word-level results with line-derived font sizes.
+  // Using the LINE bbox height for all words on that line ensures consistent
+  // font size regardless of whether a word is all-caps, all-lowercase, etc.
   const wordResults: OcrWord[] = [];
-  for (const w of allWords) {
-    const text = w.text?.trim();
-    if (!text) continue;
-    if (w.confidence < CONF_WORD) continue;
-    const rect = toPdfRect(w.bbox);
-    if (!looksLikeText(text, rect)) continue;
-    const fontSize = rect.height * 1.15;
-    wordResults.push({ text, rect, confidence: w.confidence, fontSize, rows: [[{ text, fontSize }]] });
+
+  const pageW = page.getViewport({ scale: 1 }).width;
+
+  if (allLines.length) {
+    for (const line of allLines) {
+      const lineRect = toPdfRect(line.bbox);
+      const lineFontSize = lineRect.height * 0.88;
+      for (const w of line.words ?? []) {
+        const raw = w.text?.trim();
+        if (!raw) continue;
+        if (w.confidence < CONF_WORD) continue;
+        const rect = toPdfRect(w.bbox);
+        if (!looksLikeText(raw, rect, pageW, pageHeightPt)) continue;
+        const text = postProcess(raw);
+        wordResults.push({ text, rect, confidence: w.confidence, fontSize: lineFontSize, rows: [[{ text, fontSize: lineFontSize }]] });
+      }
+    }
+  } else {
+    for (const w of (d.words ?? []) as TessWord[]) {
+      const raw = w.text?.trim();
+      if (!raw) continue;
+      if (w.confidence < CONF_WORD) continue;
+      const rect = toPdfRect(w.bbox);
+      if (!looksLikeText(raw, rect, pageW, pageHeightPt)) continue;
+      const text = postProcess(raw);
+      const fontSize = rect.height * 1.15;
+      wordResults.push({ text, rect, confidence: w.confidence, fontSize, rows: [[{ text, fontSize }]] });
+    }
   }
 
   return clusterWords(wordResults);

@@ -14,11 +14,12 @@ export function EditOverlay({ edit, scale, pageHeightPt }: Props) {
   const removeEdit = usePdfStore((s) => s.removeEdit);
   const ref = useRef<HTMLTextAreaElement>(null);
 
-  const r = edit.originalRect;
-  const left = r.x * scale;
-  const top  = pageHeightPt * scale - (r.y + r.height) * scale;
-  const w    = Math.max(r.width  * scale, 32);
-  const h    = Math.max(r.height * scale, 18);
+  const r    = edit.originalRect;
+  const pad  = Math.max(edit.fontSize * scale * 0.15, 2);
+  const left = r.x * scale - pad;
+  const top  = pageHeightPt * scale - (r.y + r.height) * scale - pad;
+  const w    = Math.max(r.width  * scale + pad * 2, 32);
+  const h    = Math.max(r.height * scale + pad * 2, 18);
   const fontSize = Math.max(edit.fontSize * scale, 8);
   const color    = `rgb(${(edit.color[0] * 255).toFixed()},${(edit.color[1] * 255).toFixed()},${(edit.color[2] * 255).toFixed()})`;
 
