@@ -1,5 +1,35 @@
 # Journal des modifications
 
+## [0.7.0] - 2026-04-22
+> Commit : `feat(ocr): auto-scan on load, per-word font sizes, multi-line clusters`
+
+### Ajouté
+- **OCR automatique au chargement** : se déclenche dès que PDF.js détecte qu'une page ne contient pas de texte extractible (`textCount === 0`). Les pages avec texte natif ne sont pas re-scannées
+- **Taille de police par mot** : chaque token d'un cluster OCR conserve sa `fontSize` individuelle (`OcrRow[] = Array<Array<{ text, fontSize }>>`) stockée dans `TextEdit.ocrRows`. Le rendu dans `AnnotationLayer` affiche chaque mot dans son `<span>` avec sa propre taille — titres et corps de texte coexistent dans la même zone sans uniformisation
+- **Multi-ligne dans EditOverlay** : le `<input>` remplacé par un `<textarea>` ; `Shift+Enter` = saut de ligne, `Enter` = validation
+- `OcrWord.rows` : structure transmise par `clusterWords` vers le store via `importOcrAsEdits`
+
+### Modifié
+- Granularité "intelligente" devient l'unique mode, le sélecteur est supprimé
+- Le bouton "Lancer l'OCR" devient "Relancer l'OCR" (l'auto-scan ayant déjà été effectué)
+- `OcrGranularity` conservé dans les types pour rétrocompatibilité mais n'est plus exposé dans l'UI
+
+---
+
+## [0.6.1] - 2026-04-22
+> Commit : `feat(ocr): smart clustering, logo filtering and contrast preprocessing`
+
+### Ajouté
+- **Granularité "intelligente"** (nouveau défaut) : après extraction mot par mot, un algorithme Union-Find regroupe les mots spatialement proches (gap horizontal < 3× largeur moy. d'un caractère, gap vertical < 1.5× hauteur de ligne) en zones sémantiques unifiées. Idéal pour les dessins techniques : une cote avec sa tolérance (`+0.05 / 25.4 / −0.05`) devient une seule zone éditable
+- **Pré-traitement image** avant OCR : conversion en niveaux de gris + étirement de contraste (histogram stretching). Améliore significativement la détection des chiffres fins (tracés de faible contraste, scans sous-exposés)
+- **Filtre logo/non-texte** (`looksLikeText`) : exclut les régions dont la densité caractères/surface est trop faible (logo étalé sur grande zone), le ratio largeur/hauteur extrême (bandeau décoratif), ou qui ne contiennent aucun caractère alphanumérique
+
+### Modifié
+- PSM `AUTO` → `SPARSE_TEXT` (11) : Tesseract cherche du texte épars sur la page et ignore les régions non-texte — bien plus adapté aux plans techniques que le mode automatique (qui tente de détecter des colonnes/paragraphes)
+- Seuils de confiance relevés et différenciés par granularité : `symbol` ≥ 40 %, `word`/`smart` ≥ 50 %, `line` ≥ 45 % (réduit les faux positifs sur les zones ambiguës)
+
+---
+
 ## [0.6.0] - 2026-04-22
 > Commit : `feat(ocr): convert scanned zones to pre-filled text edits for iLovePDF-like UX`
 

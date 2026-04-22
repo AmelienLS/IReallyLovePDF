@@ -6,7 +6,7 @@ import { AnnotationLayer } from "./AnnotationLayer";
 import { EditOverlay } from "./EditOverlay";
 import { usePdfStore } from "../../store/usePdfStore";
 import type { TextEdit } from "../../store/types";
-import { runOcrOnPage, type OcrGranularity } from "../../lib/ocr";
+import { runOcrOnPage } from "../../lib/ocr";
 
 interface Props {
   doc: PDFDocumentProxy;
@@ -19,10 +19,8 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
   const [page, setPage] = useState<PDFPageProxy | null>(null);
   const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
   const [pageHeightPt, setPageHeightPt] = useState(0);
-  const [textCount, setTextCount] = useState<number | null>(null);
   const [ocrProgress, setOcrProgress] = useState<number>(0);
   const [ocrStatus, setOcrStatus] = useState<string>("");
-  const [granularity, setGranularity] = useState<OcrGranularity>("line");
   const toolMode = usePdfStore((s) => s.toolMode);
   const activeEditId = usePdfStore((s) => s.activeEditId);
   const edits = usePdfStore((s) => s.edits);
@@ -31,31 +29,26 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
   const importOcrAsEdits = usePdfStore((s) => s.importOcrAsEdits);
   const setOcrRunning = usePdfStore((s) => s.setOcrRunning);
   const prevPage = useRef<PDFPageProxy | null>(null);
+  // Prevent double auto-trigger across renders (e.g. strict mode double-effect).
+  const autoTriggered = useRef(false);
 
-  const ocrZoneCount = ocrWords?.length ?? 0;
-
-  const handleRunOcr = async () => {
-    if (!page || ocrRunning) return;
+  const runOcr = async (p: PDFPageProxy) => {
+    if (ocrRunning) return;
     setOcrRunning(pageIndex, true);
     setOcrProgress(0);
     setOcrStatus("Initialisation…");
     try {
-      const words = await runOcrOnPage(page, {
+      const words = await runOcrOnPage(p, {
         lang: "eng",
-        granularity,
         onProgress: setOcrProgress,
         onStatus: setOcrStatus,
       });
       importOcrAsEdits(pageIndex, words);
-      setOcrStatus(`${words.length} zone${words.length > 1 ? "s" : ""} prête${words.length > 1 ? "s" : ""} à éditer`);
+      setOcrStatus(`${words.length} zone${words.length !== 1 ? "s" : ""} prête${words.length !== 1 ? "s" : ""} à éditer`);
     } catch (e) {
       console.error("OCR failed:", e);
       const msg = e instanceof Error ? e.message : String(e);
-      setOcrStatus(`Erreur : ${msg}`);
-      alert(
-        "L'OCR a échoué :\n\n" + msg +
-        "\n\nConseil : relancer `npm run setup-tesseract` pour vérifier que les fichiers tesseract sont bien dans public/tesseract/"
-      );
+      setOcrStatus(`Erreur OCR : ${msg}`);
     } finally {
       setOcrRunning(pageIndex, false);
     }
@@ -63,6 +56,7 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+    autoTriggered.current = false;
     doc.getPage(pdfPageNumber).then((p) => {
       if (cancelled) { p.cleanup(); return; }
       prevPage.current?.cleanup();
@@ -72,6 +66,15 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
     });
     return () => { cancelled = true; };
   }, [doc, pdfPageNumber]);
+
+  // Auto-OCR fires once when PDF.js finds no extractable text on this page
+  // (vectorized / scanned PDF). Pages with native text are left as-is.
+  const handleTextCount = (count: number) => {
+    if (count === 0 && page && !ocrWords && !autoTriggered.current) {
+      autoTriggered.current = true;
+      runOcr(page);
+    }
+  };
 
   if (!page) {
     return (
@@ -97,6 +100,7 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
       ? (edits[activeEditId] as TextEdit)
       : null;
   const isActiveOnThisPage = activeEdit?.pageIndex === pageIndex;
+  const ocrZoneCount = ocrWords?.length ?? 0;
 
   return (
     <div style={{ position: "relative" }}>
@@ -114,14 +118,15 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
         {canvasSize.w > 0 && (
           <>
             <AnnotationLayer pageIndex={pageIndex} scale={scale} pageHeightPt={pageHeightPt} width={canvasSize.w} height={canvasSize.h} />
-            <TextLayer page={page} pageIndex={pageIndex} scale={scale} width={canvasSize.w} height={canvasSize.h} onTextCount={setTextCount} />
+            <TextLayer page={page} pageIndex={pageIndex} scale={scale} width={canvasSize.w} height={canvasSize.h} onTextCount={handleTextCount} />
             {isActiveOnThisPage && activeEdit && (
               <EditOverlay edit={activeEdit} scale={scale} pageHeightPt={pageHeightPt} />
             )}
           </>
         )}
       </div>
-      {/* Page number badge */}
+
+      {/* Page badge */}
       <div style={{
         textAlign: "center",
         marginTop: 8,
@@ -130,54 +135,36 @@ export function PageRenderer({ doc, pageIndex, pdfPageNumber, scale }: Props) {
         fontVariantNumeric: "tabular-nums",
       }}>
         {pageIndex + 1}
-        {toolMode === "select" && textCount !== null && (
-          <span style={{
-            marginLeft: 8,
-            color: textCount === 0 ? "var(--danger, #d32f2f)" : "var(--text-tertiary)",
-          }}>
-            · {textCount === 0
-              ? "aucun texte extractible (PDF vectorisé / scanné)"
-              : `${textCount} zone${textCount > 1 ? "s" : ""} éditable${textCount > 1 ? "s" : ""}`}
-            {ocrZoneCount > 0 && (
-              <span style={{ marginLeft: 6, color: "#ff9500" }}>
-                · OCR : {ocrZoneCount} zone{ocrZoneCount > 1 ? "s" : ""}
+        {toolMode === "select" && (
+          <span style={{ marginLeft: 8 }}>
+            {ocrRunning && (
+              <span style={{ color: "#ff9500" }}>
+                · OCR {Math.round(ocrProgress * 100)} %
+              </span>
+            )}
+            {!ocrRunning && ocrZoneCount > 0 && (
+              <span style={{ color: "#ff9500" }}>
+                · {ocrZoneCount} zone{ocrZoneCount !== 1 ? "s" : ""} OCR
+              </span>
+            )}
+            {(ocrRunning || ocrStatus) && (
+              <span style={{ marginLeft: 6, color: "var(--text-tertiary)", fontStyle: "italic" }}>
+                {ocrStatus}
               </span>
             )}
           </span>
         )}
         {toolMode === "select" && (
-          <div style={{ marginTop: 6, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-            <div style={{ display: "flex", justifyContent: "center", gap: 8, alignItems: "center" }}>
-              <select
-                value={granularity}
-                onChange={(e) => setGranularity(e.target.value as OcrGranularity)}
-                disabled={ocrRunning}
-                style={{ fontSize: 11, padding: "2px 6px", borderRadius: "var(--radius-sm)" }}
-                title="Granularité : ligne (zone par ligne de texte), mot ou symbole"
-              >
-                <option value="line">par ligne</option>
-                <option value="word">par mot</option>
-                <option value="symbol">par symbole</option>
-              </select>
-              <button
-                className="btn-secondary"
-                onClick={handleRunOcr}
-                disabled={ocrRunning}
-                style={{ fontSize: 11, padding: "3px 10px" }}
-                title="Détecte le texte par reconnaissance optique (utile pour PDF vectorisés / scannés)"
-              >
-                {ocrRunning
-                  ? `${Math.round(ocrProgress * 100)}%`
-                  : ocrZoneCount > 0
-                    ? "Relancer l'OCR"
-                    : "Lancer l'OCR sur cette page"}
-              </button>
-            </div>
-            {(ocrRunning || ocrStatus) && (
-              <div style={{ fontSize: 10, color: "var(--text-tertiary)", fontStyle: "italic" }}>
-                {ocrStatus}
-              </div>
-            )}
+          <div style={{ marginTop: 4 }}>
+            <button
+              className="btn-secondary"
+              onClick={() => page && runOcr(page)}
+              disabled={!!ocrRunning}
+              style={{ fontSize: 11, padding: "3px 10px" }}
+              title="Relancer la reconnaissance optique sur cette page"
+            >
+              {ocrRunning ? `${Math.round(ocrProgress * 100)} %` : "Relancer l'OCR"}
+            </button>
           </div>
         )}
       </div>

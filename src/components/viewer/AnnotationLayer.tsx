@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { usePdfStore } from "../../store/usePdfStore";
-import type { NewTextBox, Highlight, TextEdit } from "../../store/types";
+import type { NewTextBox, Highlight, TextEdit, OcrRow } from "../../store/types";
 
 interface Props {
   pageIndex: number;
@@ -157,8 +157,8 @@ export function AnnotationLayer({ pageIndex, scale, pageHeightPt, width, height 
           const te = edit as TextEdit;
           const r = te.originalRect;
           const isActive = activeEditId === te.id;
-          const fontSize = Math.max(te.fontSize * scale, 8);
           const color = `rgb(${(te.color[0]*255).toFixed()},${(te.color[1]*255).toFixed()},${(te.color[2]*255).toFixed()})`;
+          const rows: OcrRow[] | undefined = te.ocrRows;
           return (
             <div
               key={te.id}
@@ -175,23 +175,32 @@ export function AnnotationLayer({ pageIndex, scale, pageHeightPt, width, height 
                 pointerEvents: "auto",
                 cursor: "pointer",
                 zIndex: isActive ? 19 : 5,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "flex-start",
                 overflow: "hidden",
                 fontFamily: `"Helvetica Neue", Helvetica, Arial, sans-serif`,
                 fontWeight: 400,
-                letterSpacing: "0.01em",
-                fontSize,
-                lineHeight: 1,
-                color,
-                whiteSpace: "pre",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "flex-start",
                 padding: 0,
                 boxSizing: "border-box",
               }}
               onClick={(e) => { e.stopPropagation(); setActiveEdit(te.id); }}
             >
-              {!isActive && te.newText}
+              {!isActive && rows
+                ? rows.map((row, ri) => (
+                    <div key={ri} style={{ display: "flex", flexWrap: "nowrap", whiteSpace: "pre", lineHeight: 1.2 }}>
+                      {row.map((token, ti) => (
+                        <span key={ti} style={{ fontSize: Math.max(token.fontSize * scale, 8), color, letterSpacing: "0.01em" }}>
+                          {ti > 0 ? " " : ""}{token.text}
+                        </span>
+                      ))}
+                    </div>
+                  ))
+                : !isActive && (
+                    <span style={{ fontSize: Math.max(te.fontSize * scale, 8), color, whiteSpace: "pre", lineHeight: 1.2 }}>
+                      {te.newText}
+                    </span>
+                  )}
               {isActive && (
                 <button
                   type="button"

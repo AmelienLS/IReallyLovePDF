@@ -5,6 +5,15 @@ export interface PdfRect {
   height: number;
 }
 
+// One word within a multi-word OCR cluster, preserving its original font size.
+export interface OcrToken {
+  text: string;
+  fontSize: number; // PDF points
+}
+
+// One row of tokens (= one line within the cluster).
+export type OcrRow = OcrToken[];
+
 export interface TextEdit {
   id: string;
   type: "text-replacement";
@@ -16,6 +25,8 @@ export interface TextEdit {
   fontFamily: string;
   color: [number, number, number];
   source?: "ocr" | "native";
+  // When source === "ocr": structured rows preserving per-word font sizes.
+  ocrRows?: OcrRow[];
 }
 
 export interface NewTextBox {

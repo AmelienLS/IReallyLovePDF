@@ -232,6 +232,7 @@ export const usePdfStore = create<PdfState & PdfActions>()(
             fontSize: w.fontSize,
             fontFamily: "Helvetica",
             color: [0, 0, 0],
+            ocrRows: w.rows,
             source: "ocr",
           } as TextEdit;
         }

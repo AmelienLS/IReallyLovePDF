@@ -5,35 +5,23 @@ export interface OcrWord {
   text: string;
   rect: PdfRect; // PDF coordinate space (origin bottom-left)
   confidence: number;
-  fontSize: number; // in PDF points
+  fontSize: number; // in PDF points — median of cluster, used as fallback
+  // Structured rows: each row is a line, each entry is a word with its own fontSize.
+  rows: Array<Array<{ text: string; fontSize: number }>>;
 }
 
-const OCR_SCALE = 3; // render at 3× for better OCR accuracy
-
-/**
- * Base URL for tesseract assets served from public/tesseract/.
- * Works both in Vite dev (http://localhost:1420/) and in Tauri production
- * (tauri://localhost/ or http://tauri.localhost/) because `public/` is copied to `dist/`.
- */
+const OCR_SCALE = 3;
 const TESS_BASE = "/tesseract";
 
+const CONF_WORD = 50;
+
 interface TessBBox { x0: number; y0: number; x1: number; y1: number }
-interface TessSymbol { text: string; bbox: TessBBox; confidence: number }
-interface TessWord { text: string; bbox: TessBBox; confidence: number; symbols?: TessSymbol[] }
+interface TessWord { text: string; bbox: TessBBox; confidence: number; symbols?: unknown[] }
 interface TessLine { text: string; bbox: TessBBox; confidence: number; words: TessWord[] }
 
-/**
- * Granularité de découpage du texte reconnu en zones éditables :
- * - "symbol" : un caractère par zone (idéal pour modifier une valeur de cote chiffre par chiffre)
- * - "word"   : un mot par zone (idéal pour des labels courts)
- * - "line"   : une ligne par zone (idéal pour des paragraphes)
- */
-export type OcrGranularity = "symbol" | "word" | "line";
+// Kept for API compatibility — only "smart" is exposed in the UI.
+export type OcrGranularity = "smart";
 
-/**
- * Jeu de caractères ASCII imprimables adapté aux dessins techniques :
- * chiffres, lettres, ponctuation courante et symboles métriques (°, ±, ×, µ, Ø).
- */
 export const DEFAULT_CHAR_WHITELIST =
   "0123456789" +
   "ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
@@ -41,19 +29,163 @@ export const DEFAULT_CHAR_WHITELIST =
   " .,:;-_+=/()[]{}<>*#%&@!?\"'" +
   "°±×µ∅ØÆæ";
 
+// ---------------------------------------------------------------------------
+// Pre-processing: grayscale + contrast stretch → better number detection.
+// ---------------------------------------------------------------------------
+function preprocessCanvas(src: HTMLCanvasElement): HTMLCanvasElement {
+  const dst = document.createElement("canvas");
+  dst.width = src.width;
+  dst.height = src.height;
+  const ctx = dst.getContext("2d")!;
+  ctx.drawImage(src, 0, 0);
+
+  const img = ctx.getImageData(0, 0, dst.width, dst.height);
+  const d = img.data;
+  const gray = new Uint8ClampedArray(d.length >> 2);
+  let lo = 255, hi = 0;
+
+  for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+    const v = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
+    gray[j] = v;
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+
+  const range = hi - lo || 1;
+  for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+    const v = Math.round(((gray[j] - lo) / range) * 255);
+    d[i] = d[i + 1] = d[i + 2] = v;
+    d[i + 3] = 255;
+  }
+
+  ctx.putImageData(img, 0, 0);
+  return dst;
+}
+
+// ---------------------------------------------------------------------------
+// Logo / non-text filter.
+// ---------------------------------------------------------------------------
+function looksLikeText(text: string, rect: PdfRect): boolean {
+  const trimmed = text.replace(/\s/g, "");
+  if (!trimmed || !/[A-Za-z0-9]/.test(trimmed)) return false;
+  // Character density: real text fills its bbox; logos spread few chars over a large area.
+  const area = rect.width * rect.height;
+  const expectedArea = rect.height * rect.height * 0.6 * trimmed.length;
+  if (area > expectedArea * 4) return false;
+  // Extreme horizontal band = decorative element, not text.
+  if (rect.width > rect.height * 8) return false;
+  return true;
+}
+
+function median(values: number[]): number {
+  const s = [...values].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+// ---------------------------------------------------------------------------
+// Smart clustering: Union-Find groups spatially close words of similar size,
+// preserving line breaks and relative font sizes between groups.
+// ---------------------------------------------------------------------------
+function clusterWords(words: OcrWord[]): OcrWord[] {
+  if (words.length === 0) return [];
+  const n = words.length;
+
+  const parent = Array.from({ length: n }, (_, i) => i);
+  function find(i: number): number {
+    while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; }
+    return i;
+  }
+  function union(i: number, j: number) { parent[find(i)] = find(j); }
+
+  const avgH     = words.reduce((s, w) => s + w.rect.height, 0) / n;
+  const avgCharW = words.reduce((s, w) => s + w.rect.width / Math.max(w.text.length, 1), 0) / n;
+  const hThresh  = avgCharW * 3;   // max horizontal gap to be "on the same line"
+  const vThresh  = avgH * 1.5;     // max vertical gap for stacked annotations (tolerances etc.)
+
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const a = words[i], b = words[j];
+
+      // Don't group words with very different font sizes (titles vs body).
+      const fsRatio = Math.max(a.fontSize, b.fontSize) / Math.min(a.fontSize, b.fontSize);
+      if (fsRatio > 1.4) continue;
+
+      const hGap = Math.max(0, Math.max(a.rect.x, b.rect.x) - Math.min(a.rect.x + a.rect.width,  b.rect.x + b.rect.width));
+      const aCy  = a.rect.y + a.rect.height / 2;
+      const bCy  = b.rect.y + b.rect.height / 2;
+      const vGap = Math.max(0, Math.abs(aCy - bCy) - (a.rect.height + b.rect.height) / 2);
+
+      if (hGap < hThresh && vGap < vThresh) union(i, j);
+    }
+  }
+
+  // Collect clusters.
+  const buckets = new Map<number, OcrWord[]>();
+  for (let i = 0; i < n; i++) {
+    const root = find(i);
+    if (!buckets.has(root)) buckets.set(root, []);
+    buckets.get(root)!.push(words[i]);
+  }
+
+  return Array.from(buckets.values()).map((cluster) => {
+    // Sort top-to-bottom (Y descending in PDF space = closer to top of page),
+    // then left-to-right within each row.
+    cluster.sort((a, b) => {
+      const dy = b.rect.y - a.rect.y;
+      if (Math.abs(dy) > avgH * 0.4) return dy;
+      return a.rect.x - b.rect.x;
+    });
+
+    // Group into rows: words with similar Y belong to the same row.
+    const rows: OcrWord[][] = [];
+    let row: OcrWord[] = [cluster[0]];
+    for (let k = 1; k < cluster.length; k++) {
+      const prev = cluster[k - 1];
+      const curr = cluster[k];
+      const dy   = Math.abs(prev.rect.y - curr.rect.y);
+      if (dy > avgH * 0.4) { rows.push(row); row = []; }
+      row.push(curr);
+    }
+    rows.push(row);
+
+    // Structured rows: each row is an array of { text, fontSize } tokens.
+    const ocrRows = rows.map((r) => r.map((w) => ({ text: w.text, fontSize: w.fontSize })));
+
+    // Flat text for backward compat / search: rows joined by \n, words by space.
+    const text = ocrRows.map((r) => r.map((t) => t.text).join(" ")).join("\n");
+
+    const minX = Math.min(...cluster.map((w) => w.rect.x));
+    const minY = Math.min(...cluster.map((w) => w.rect.y));
+    const maxX = Math.max(...cluster.map((w) => w.rect.x + w.rect.width));
+    const maxY = Math.max(...cluster.map((w) => w.rect.y + w.rect.height));
+    const avgConf = cluster.reduce((s, w) => s + w.confidence, 0) / cluster.length;
+    const fontSize = median(cluster.map((w) => w.fontSize));
+
+    return {
+      text,
+      rect: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+      confidence: avgConf,
+      fontSize,
+      rows: ocrRows,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Main entry point.
+// ---------------------------------------------------------------------------
 export async function runOcrOnPage(
   page: PDFPageProxy,
   opts: {
     lang?: string;
-    granularity?: OcrGranularity;
-    charWhitelist?: string | null; // null = pas de restriction
+    charWhitelist?: string | null;
     onProgress?: (p: number) => void;
     onStatus?: (s: string) => void;
   } = {}
 ): Promise<OcrWord[]> {
   const {
     lang = "eng",
-    granularity = "symbol",
     charWhitelist = DEFAULT_CHAR_WHITELIST,
     onProgress,
     onStatus,
@@ -61,13 +193,14 @@ export async function runOcrOnPage(
 
   onStatus?.("Rendu de la page…");
   const viewport = page.getViewport({ scale: OCR_SCALE });
-  const canvas = document.createElement("canvas");
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
+  const raw = document.createElement("canvas");
+  raw.width = viewport.width;
+  raw.height = viewport.height;
+  await page.render({ canvas: raw, viewport }).promise;
 
-  await page.render({ canvas, viewport }).promise;
+  onStatus?.("Pré-traitement…");
+  const canvas = preprocessCanvas(raw);
 
-  // Dynamic import so the bundle only loads tesseract on demand
   onStatus?.("Chargement du moteur OCR…");
   const { createWorker, PSM } = await import("tesseract.js");
 
@@ -83,114 +216,54 @@ export async function runOcrOnPage(
     },
   });
 
-  // PSM.AUTO (3) = fully automatic page segmentation; good default.
-  // Whitelist ASCII pour les dessins techniques → meilleure précision (pas de caractères exotiques parasites).
-  const params: Record<string, string | number> = {
-    tessedit_pageseg_mode: PSM.AUTO,
+  await worker.setParameters({
+    tessedit_pageseg_mode: PSM.SPARSE_TEXT,
     preserve_interword_spaces: "1",
-  };
-  if (charWhitelist) params.tessedit_char_whitelist = charWhitelist;
-  await worker.setParameters(params);
+    ...(charWhitelist ? { tessedit_char_whitelist: charWhitelist } : {}),
+  });
 
   onStatus?.("Reconnaissance…");
-  // v7 requires explicit `output.blocks: true` to get the block/paragraph/line/word tree.
-  const { data } = await worker.recognize(
-    canvas,
-    {},
-    { text: true, blocks: true, hocr: false, tsv: false }
-  );
+  const { data } = await worker.recognize(canvas, {}, { text: true, blocks: true, hocr: false, tsv: false });
   await worker.terminate();
 
   const pageHeightPt = page.getViewport({ scale: 1 }).height;
+  const toPdfRect = (bb: TessBBox): PdfRect => ({
+    x:      bb.x0 / OCR_SCALE,
+    y:      pageHeightPt - bb.y1 / OCR_SCALE,
+    width:  (bb.x1 - bb.x0) / OCR_SCALE,
+    height: (bb.y1 - bb.y0) / OCR_SCALE,
+  });
 
-  const toPdfRect = (bb: TessBBox): PdfRect => {
-    const pdfX = bb.x0 / OCR_SCALE;
-    const pdfY = pageHeightPt - bb.y1 / OCR_SCALE;
-    const width = (bb.x1 - bb.x0) / OCR_SCALE;
-    const height = (bb.y1 - bb.y0) / OCR_SCALE;
-    return { x: pdfX, y: pdfY, width, height };
-  };
-
-  // tesseract.js v7 returns `blocks`, not top-level `words`/`lines`.
-  // Walk the hierarchy: blocks -> paragraphs -> lines -> words.
   const d = data as unknown as {
-    blocks?: Array<{
-      paragraphs?: Array<{
-        lines?: Array<TessLine>;
-      }>;
-    }>;
-    // Older versions may still expose these at top level:
-    lines?: Array<TessLine>;
-    words?: Array<TessWord>;
+    blocks?: Array<{ paragraphs?: Array<{ lines?: TessLine[] }> }>;
+    lines?: TessLine[];
+    words?: TessWord[];
   };
 
   const allLines: TessLine[] = [];
-  if (d.blocks && d.blocks.length) {
-    for (const b of d.blocks) {
-      for (const p of b.paragraphs ?? []) {
+  if (d.blocks?.length) {
+    for (const b of d.blocks)
+      for (const p of b.paragraphs ?? [])
         for (const l of p.lines ?? []) allLines.push(l);
-      }
-    }
   } else if (d.lines) {
     allLines.push(...d.lines);
   }
 
-  const results: OcrWord[] = [];
+  // Extract word-level results, filter noise.
+  const allWords: TessWord[] = allLines.length
+    ? allLines.flatMap((l) => l.words ?? [])
+    : (d.words ?? []);
 
-  if (granularity === "symbol") {
-    // Caractère par caractère — chaque symbole devient une zone cliquable indépendante.
-    for (const line of allLines) {
-      for (const w of line.words ?? []) {
-        for (const s of w.symbols ?? []) {
-          const text = s.text;
-          if (!text || !text.trim()) continue;
-          if (s.confidence < 30) continue;
-          const rect = toPdfRect(s.bbox);
-          results.push({
-            text,
-            rect,
-            confidence: s.confidence,
-            // Le bbox Tesseract colle au glyphe (pas d'ascendants/descendants) ;
-            // on majore pour retrouver la vraie taille de police en points.
-            fontSize: rect.height * 1.35,
-          });
-        }
-      }
-    }
-  } else if (granularity === "line") {
-    for (const line of allLines) {
-      const text = line.text?.replace(/\s+$/g, "").trim();
-      if (!text) continue;
-      if (line.confidence < 30) continue;
-      const rect = toPdfRect(line.bbox);
-      results.push({
-        text,
-        rect,
-        confidence: line.confidence,
-        fontSize: rect.height * 1.15,
-      });
-    }
-  } else {
-    // word granularity — prefer hierarchical walk for consistency with fallback
-    const allWords: TessWord[] = [];
-    if (allLines.length) {
-      for (const l of allLines) for (const w of l.words ?? []) allWords.push(w);
-    } else if (d.words) {
-      allWords.push(...d.words);
-    }
-    for (const w of allWords) {
-      const text = w.text?.trim();
-      if (!text) continue;
-      if (w.confidence < 30) continue;
-      const rect = toPdfRect(w.bbox);
-      results.push({
-        text,
-        rect,
-        confidence: w.confidence,
-        fontSize: rect.height * 1.15,
-      });
-    }
+  const wordResults: OcrWord[] = [];
+  for (const w of allWords) {
+    const text = w.text?.trim();
+    if (!text) continue;
+    if (w.confidence < CONF_WORD) continue;
+    const rect = toPdfRect(w.bbox);
+    if (!looksLikeText(text, rect)) continue;
+    const fontSize = rect.height * 1.15;
+    wordResults.push({ text, rect, confidence: w.confidence, fontSize, rows: [[{ text, fontSize }]] });
   }
 
-  return results;
+  return clusterWords(wordResults);
 }
